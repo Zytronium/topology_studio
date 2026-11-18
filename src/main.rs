@@ -1,6 +1,8 @@
 mod app;
 mod canvas;
+mod icons;
 mod model;
+mod palette;
 mod theme;
 
 use app::TopologyApp;
