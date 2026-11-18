@@ -1,6 +1,6 @@
 use egui::*;
 use uuid::Uuid;
-use crate::model::{Node, NodeType, TopologyProject};
+use crate::model::{Node, NodeType, TopologyProject, Link, LinkStyle};
 use crate::icons;
 
 /// Pan and zoom state for the canvas
@@ -39,23 +39,37 @@ impl CanvasTransform {
 /// Interaction state for the canvas
 pub struct CanvasInteraction {
     pub selected_node: Option<Uuid>,
+    pub selected_link: Option<Uuid>,
     pub dragging_node: Option<Uuid>,
     pub is_panning: bool,
     pub pan_start: Pos2,
     pub pan_offset_start: Pos2,
     /// Node being edited via double-click; stores (node_id, current_text)
     pub editing_node: Option<(Uuid, String)>,
+    /// Source node for link creation (first click in link mode)
+    pub link_source: Option<Uuid>,
+    /// Node ID for context menu (right-click target)
+    pub context_menu_node: Option<Uuid>,
+    /// Position of the context menu on screen
+    pub context_menu_pos: Pos2,
+    /// Whether the Add Link submenu is open (persists across frames)
+    pub context_submenu_open: bool,
 }
 
 impl Default for CanvasInteraction {
     fn default() -> Self {
         Self {
             selected_node: None,
+            selected_link: None,
             dragging_node: None,
             is_panning: false,
             pan_start: Pos2::ZERO,
             pan_offset_start: Pos2::ZERO,
             editing_node: None,
+            link_source: None,
+            context_menu_node: None,
+            context_menu_pos: Pos2::ZERO,
+            context_submenu_open: false,
         }
     }
 }
@@ -79,6 +93,37 @@ impl CanvasInteraction {
         
         closest.map(|(id, _)| id)
     }
+
+    /// Find the link closest to the given screen position, returning the link ID if within hit range
+    fn hit_test_link(project: &TopologyProject, screen_pos: Pos2, transform: &CanvasTransform) -> Option<Uuid> {
+        let hit_radius = 8.0 / transform.zoom; // 8 pixels in screen space
+        let mut closest: Option<(Uuid, f32)> = None;
+        
+        for link in &project.links {
+            let source_node = project.get_node(link.source);
+            let target_node = project.get_node(link.target);
+            if let (Some(src), Some(tgt)) = (source_node, target_node) {
+                let src_center = pos2(src.x as f32, src.y as f32);
+                let tgt_center = pos2(tgt.x as f32, tgt.y as f32);
+                
+                let src_edge = node_edge_point(src, src_center, tgt_center);
+                let tgt_edge = node_edge_point(tgt, tgt_center, src_center);
+                
+                let src_screen = transform.world_to_screen(src_edge);
+                let tgt_screen = transform.world_to_screen(tgt_edge);
+                
+                let dist = distance_point_to_segment(screen_pos, src_screen, tgt_screen);
+                if dist <= hit_radius {
+                    match closest {
+                        Some((_, best_dist)) if dist >= best_dist => {},
+                        _ => { closest = Some((link.id, dist)); }
+                    }
+                }
+            }
+        }
+        
+        closest.map(|(id, _)| id)
+    }
 }
 
 /// Result of canvas interaction processing
@@ -87,6 +132,17 @@ pub struct CanvasResult {
     pub node_deleted: bool,
     pub node_moved: bool,
     pub node_renamed: bool,
+    pub link_added: bool,
+    pub link_deleted: bool,
+    /// Link style requested from context menu (activates link mode in app.rs)
+    pub context_link_style: Option<LinkStyle>,
+}
+
+/// Context menu action selected by the user
+enum ContextMenuAction {
+    Rename,
+    AddLink(LinkStyle),
+    Delete,
 }
 
 /// Draw the canvas with grid, nodes, pan, and zoom
@@ -98,12 +154,17 @@ pub fn canvas_ui(
     palette_selected_type: Option<NodeType>,
     palette_drag_type: Option<NodeType>,
     palette_drag_ended: bool,
+    link_mode: bool,
+    link_style: Option<LinkStyle>,
 ) -> CanvasResult {
     let mut result = CanvasResult {
         node_added: false,
         node_deleted: false,
         node_moved: false,
         node_renamed: false,
+        link_added: false,
+        link_deleted: false,
+        context_link_style: None,
     };
 
     let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
@@ -116,6 +177,9 @@ pub fn canvas_ui(
 
     // Draw grid
     draw_grid(&painter, rect, transform, bg_color);
+
+    // === LINK RENDERING ===
+    draw_links(&painter, project, transform, interaction, visuals, link_mode);
 
     // === NODE RENDERING ===
     for node in &project.nodes {
@@ -232,6 +296,192 @@ pub fn canvas_ui(
         }
     }
 
+    // === RIGHT-CLICK CONTEXT MENU ===
+    let mut context_action: Option<(Uuid, ContextMenuAction)> = None;
+    if let Some(menu_node_id) = interaction.context_menu_node {
+        let ctx = ui.ctx().clone();
+        let menu_pos = interaction.context_menu_pos;
+        let mut action: Option<ContextMenuAction> = None;
+        let mut addlink_rect: Option<Rect> = None;
+        let mut submenu_rect: Option<Rect> = None;
+
+        // Menu styling
+        let menu_bg = visuals.extreme_bg_color;
+        let menu_text = visuals.text_color();
+        // Compute a hover color that contrasts with the background
+        let is_dark = menu_bg.to_array().iter().map(|c| *c as u16).sum::<u16>() < 384;
+        let menu_hover_bg = if is_dark {
+            Color32::from_rgba_premultiplied(80, 80, 100, 100)
+        } else {
+            Color32::from_rgba_premultiplied(60, 60, 80, 60)
+        };
+        let area_response = egui::Area::new(egui::Id::new("context_menu"))
+            .order(egui::Order::Foreground)
+            .constrain(true)
+            .fixed_pos(menu_pos)
+            .show(&ctx, |ui| {
+                let frame = egui::Frame::none()
+                    .fill(menu_bg)
+                    .stroke(Stroke::new(1.0, menu_text))
+                    .rounding(4.0)
+                    .inner_margin(2.0);
+                frame.show(ui, |ui| {
+                    // Helper: create a transparent menu item that fits its text
+                    // `extra_width` adds padding (e.g. for the chevron on "Add Link")
+                    // Returns (rect, clicked, hovered)
+                    let menu_item = |ui: &mut egui::Ui, text: &str, extra_width: f32| -> (Rect, bool, bool) {
+                        let galley = ui.painter().layout_no_wrap(
+                            text.to_string(),
+                            FontId::proportional(14.0),
+                            menu_text,
+                        );
+                        let height = galley.size().y + 8.0;
+                        let width = galley.size().x + 8.0 + extra_width;
+                        let (rect, response) = ui.allocate_at_least(
+                            vec2(width, height),
+                            egui::Sense::click(),
+                        );
+                        ui.painter().galley(rect.min + vec2(4.0, (height - galley.size().y) / 2.0), galley, Color32::TRANSPARENT);
+                        (rect, response.clicked(), response.hovered())
+                    };
+
+                    // Rename
+                    let (rename_rect, rename_clicked, rename_hovered) = menu_item(ui, "Rename", 0.0);
+                    if rename_clicked {
+                        action = Some(ContextMenuAction::Rename);
+                    }
+                    if rename_hovered {
+                        ui.painter().rect_filled(rename_rect, 2.0, menu_hover_bg);
+                    }
+
+                    // Add Link with submenu on hover (extra padding for chevron)
+                    let (addlink_rect_local, _addlink_clicked, addlink_hovered) = menu_item(ui, "Add Link", 24.0);
+                    addlink_rect = Some(addlink_rect_local);
+
+                    // Draw chevron arrow on the right side of "Add Link"
+                    {
+                        let painter = ui.painter();
+                        let chevron_x = addlink_rect_local.right() - 10.0;
+                        let chevron_y = addlink_rect_local.center().y;
+                        let size = 4.0;
+                        painter.line(
+                            vec![
+                                pos2(chevron_x - size, chevron_y - size),
+                                pos2(chevron_x, chevron_y),
+                                pos2(chevron_x - size, chevron_y + size),
+                            ],
+                            Stroke::new(1.0, menu_text),
+                        );
+                    }
+
+                    if addlink_hovered {
+                        ui.painter().rect_filled(addlink_rect_local, 2.0, menu_hover_bg);
+                    }
+
+                    // Show submenu if hovering over "Add Link" or the submenu itself
+                    let show_submenu = addlink_hovered || interaction.context_submenu_open;
+                    if show_submenu {
+                        let submenu_pos = addlink_rect_local.right_top();
+                        let submenu_id = egui::Id::new("link_submenu");
+                        let submenu_response = egui::Area::new(submenu_id)
+                            .order(egui::Order::Foreground)
+                            .constrain(true)
+                            .fixed_pos(submenu_pos)
+                            .show(&ctx, |ui| {
+                                let frame2 = egui::Frame::none()
+                                    .fill(menu_bg)
+                                    .stroke(Stroke::new(1.0, menu_text))
+                                    .rounding(4.0)
+                                    .inner_margin(2.0);
+                                frame2.show(ui, |ui| {
+                                    let (eth_rect, eth_clicked, eth_hovered) = menu_item(ui, "Ethernet", 0.0);
+                                    if eth_clicked {
+                                        action = Some(ContextMenuAction::AddLink(LinkStyle::Solid));
+                                    }
+                                    if eth_hovered {
+                                        ui.painter().rect_filled(eth_rect, 2.0, menu_hover_bg);
+                                    }
+
+                                    let (wire_rect, wire_clicked, wire_hovered) = menu_item(ui, "Wireless", 0.0);
+                                    if wire_clicked {
+                                        action = Some(ContextMenuAction::AddLink(LinkStyle::Dashed));
+                                    }
+                                    if wire_hovered {
+                                        ui.painter().rect_filled(wire_rect, 2.0, menu_hover_bg);
+                                    }
+                                });
+                            });
+                        submenu_rect = Some(submenu_response.response.rect);
+                    }
+
+                    // Delete
+                    let (delete_rect, delete_clicked, delete_hovered) = menu_item(ui, "Delete", 0.0);
+                    if delete_clicked {
+                        action = Some(ContextMenuAction::Delete);
+                    }
+                    if delete_hovered {
+                        ui.painter().rect_filled(delete_rect, 2.0, menu_hover_bg);
+                    }
+                });
+            });
+
+        // Update submenu open state based on hover over "Add Link" or the submenu
+        let pointer_hover = ui.ctx().input(|i| i.pointer.hover_pos());
+        let hovering_addlink = addlink_rect
+            .and_then(|r| pointer_hover.map(|p| r.contains(p)))
+            .unwrap_or(false);
+        let hovering_submenu = submenu_rect
+            .and_then(|r| pointer_hover.map(|p| r.contains(p)))
+            .unwrap_or(false);
+        interaction.context_submenu_open = hovering_addlink || hovering_submenu;
+
+        // Close menu if Escape is pressed
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            interaction.context_menu_node = None;
+            interaction.context_submenu_open = false;
+        }
+
+        // Close menu if clicking outside the menu area (including submenu)
+        if input.primary_clicked() {
+            if let Some(click_pos) = input.hover_pos() {
+                let in_main = area_response.response.rect.contains(click_pos);
+                let in_submenu = submenu_rect.map_or(false, |r| r.contains(click_pos));
+                if !in_main && !in_submenu {
+                    interaction.context_menu_node = None;
+                    interaction.context_submenu_open = false;
+                }
+            }
+        }
+
+        if let Some(a) = action {
+            context_action = Some((menu_node_id, a));
+        }
+    }
+
+    // Handle context menu actions
+    if let Some((node_id, action)) = context_action {
+        interaction.context_menu_node = None;
+        match action {
+            ContextMenuAction::Rename => {
+                if let Some(node) = project.get_node(node_id) {
+                    interaction.editing_node = Some((node_id, node.label.clone()));
+                    interaction.selected_node = Some(node_id);
+                }
+            }
+            ContextMenuAction::AddLink(style) => {
+                interaction.selected_node = Some(node_id);
+                interaction.link_source = Some(node_id);
+                result.context_link_style = Some(style);
+            }
+            ContextMenuAction::Delete => {
+                project.remove_node(node_id);
+                interaction.selected_node = None;
+                interaction.editing_node = None;
+                result.node_deleted = true;
+            }
+        }
+    }
+
     // Handle palette drag placement
     if palette_drag_ended {
         if let Some(node_type) = palette_drag_type {
@@ -267,20 +517,61 @@ pub fn canvas_ui(
             }
         }
 
+        // Secondary (right) button clicked - show context menu on node
+        if input.secondary_clicked() {
+            let world_pos = transform.screen_to_world(pointer_pos);
+            if let Some(node_id) = CanvasInteraction::hit_test_node(project, world_pos, transform) {
+                interaction.context_menu_node = Some(node_id);
+                interaction.context_menu_pos = pointer_pos;
+                interaction.selected_node = Some(node_id);
+            } else {
+                interaction.context_menu_node = None;
+            }
+        }
+
         // Primary button clicked (edge-triggered, fires once per click)
         if input.primary_clicked() {
             // Check if we're on a node
             if let Some(node_id) = CanvasInteraction::hit_test_node(project, transform.screen_to_world(pointer_pos), transform) {
-                if response.double_clicked() {
+                if link_mode {
+                    // Link creation mode
+                    if interaction.link_source.is_none() {
+                        // First click: set source
+                        interaction.link_source = Some(node_id);
+                        interaction.selected_node = Some(node_id);
+                    } else if interaction.link_source != Some(node_id) {
+                        // Second click: create link
+                        let source_id = interaction.link_source.unwrap();
+                        let style = link_style.unwrap_or(LinkStyle::Solid);
+                        // Check if link already exists
+                        let already_exists = project.links.iter().any(|l|
+                            (l.source == source_id && l.target == node_id) ||
+                            (l.source == node_id && l.target == source_id)
+                        );
+                        if !already_exists {
+                            let link = Link::new(source_id, node_id, style);
+                            let link_id = link.id;
+                            project.add_link(link);
+                            interaction.selected_link = Some(link_id);
+                            result.link_added = true;
+                            // Reset link source after successful link creation
+                            interaction.link_source = None;
+                        }
+                        // If link already exists, stay in link mode so the user can click a different target
+                    }
+                    // If clicking the same node as source, do nothing
+                } else if response.double_clicked() {
                     // Double-click: start editing the node's label
                     if let Some(node) = project.get_node(node_id) {
                         interaction.editing_node = Some((node_id, node.label.clone()));
                         interaction.selected_node = Some(node_id);
+                        interaction.selected_link = None;
                         interaction.dragging_node = None;
                     }
                 } else {
                     // Single click: select the node; drag will start after a delay
                     interaction.selected_node = Some(node_id);
+                    interaction.selected_link = None;
                     // Don't start dragging yet — wait for drag delta to confirm it's not a double-click
                 }
             } else if space_held {
@@ -289,18 +580,29 @@ pub fn canvas_ui(
                 interaction.pan_start = pointer_pos;
                 interaction.pan_offset_start = transform.offset;
             } else {
-                // Clicked on empty space - deselect
-                interaction.selected_node = None;
-                interaction.editing_node = None;
+                // Clicked on empty space - check for link hit first
+                if let Some(link_id) = CanvasInteraction::hit_test_link(project, pointer_pos, transform) {
+                    if link_mode {
+                        // In link mode, don't select links, just deselect
+                        interaction.selected_link = None;
+                    } else {
+                        interaction.selected_link = Some(link_id);
+                        interaction.selected_node = None;
+                    }
+                } else {
+                    interaction.selected_node = None;
+                    interaction.selected_link = None;
+                    interaction.editing_node = None;
 
-                // Place node from palette selection (single click placement)
-                if let Some(node_type) = palette_selected_type {
-                    let world_pos = transform.screen_to_world(pointer_pos);
-                    let node = Node::new(node_type, world_pos.x as f64, world_pos.y as f64);
-                    let node_id = node.id;
-                    project.add_node(node);
-                    interaction.selected_node = Some(node_id);
-                    result.node_added = true;
+                    // Place node from palette selection (single click placement)
+                    if let Some(node_type) = palette_selected_type {
+                        let world_pos = transform.screen_to_world(pointer_pos);
+                        let node = Node::new(node_type, world_pos.x as f64, world_pos.y as f64);
+                        let node_id = node.id;
+                        project.add_node(node);
+                        interaction.selected_node = Some(node_id);
+                        result.node_added = true;
+                    }
                 }
             }
         }
@@ -384,13 +686,30 @@ pub fn canvas_ui(
         transform.offset = mouse_pos - (mouse_pos - transform.offset) * actual_factor;
     }
 
-    // Handle keyboard - Delete selected node
+    // Handle keyboard - Delete selected node or link
     if ui.input(|i| i.key_pressed(egui::Key::Delete)) {
-        if let Some(node_id) = interaction.selected_node {
+        if link_mode {
+            // Exit link mode on Delete
+            interaction.link_source = None;
+        } else if let Some(link_id) = interaction.selected_link {
+            project.remove_link(link_id);
+            interaction.selected_link = None;
+            result.link_deleted = true;
+        } else if let Some(node_id) = interaction.selected_node {
             project.remove_node(node_id);
             interaction.selected_node = None;
             interaction.editing_node = None;
             result.node_deleted = true;
+        }
+    }
+
+    // Handle keyboard - Escape to cancel link mode or selection
+    if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+        if link_mode {
+            interaction.link_source = None;
+        } else {
+            interaction.selected_node = None;
+            interaction.selected_link = None;
         }
     }
 
@@ -408,7 +727,190 @@ pub fn canvas_ui(
         Color32::TRANSPARENT,
     );
 
+    // Draw link mode indicator
+    if link_mode {
+        let mode_text = if interaction.link_source.is_some() {
+            "Click another node to complete the link"
+        } else {
+            "Link mode: Click a node to start"
+        };
+        let galley = painter.layout_no_wrap(
+            mode_text.to_string(),
+            FontId::proportional(13.0),
+            ui.visuals().text_color(),
+        );
+        let galley_size = galley.size();
+        painter.galley(
+            rect.left_top() + vec2(8.0, 8.0 + galley_size.y),
+            galley,
+            Color32::TRANSPARENT,
+        );
+    }
+
     result
+}
+
+/// Draw all links on the canvas
+fn draw_links(
+    painter: &egui::Painter,
+    project: &TopologyProject,
+    transform: &CanvasTransform,
+    interaction: &CanvasInteraction,
+    visuals: &egui::Visuals,
+    link_mode: bool,
+) {
+    // Determine link colors based on theme
+    let bg_luminance = visuals.extreme_bg_color.to_array()[0] as f32 * 0.299
+        + visuals.extreme_bg_color.to_array()[1] as f32 * 0.587
+        + visuals.extreme_bg_color.to_array()[2] as f32 * 0.114;
+    let is_dark = bg_luminance < 128.0;
+    let link_color = if is_dark {
+        Color32::from_rgba_unmultiplied(180, 180, 200, 255)
+    } else {
+        Color32::from_rgba_unmultiplied(80, 80, 100, 255)
+    };
+    let selected_link_color = visuals.selection.stroke.color;
+
+    for link in &project.links {
+        let source_node = project.get_node(link.source);
+        let target_node = project.get_node(link.target);
+        if let (Some(src), Some(tgt)) = (source_node, target_node) {
+            // Calculate edge points for both nodes
+            let src_center = pos2(src.x as f32, src.y as f32);
+            let tgt_center = pos2(tgt.x as f32, tgt.y as f32);
+            
+            let src_edge = node_edge_point(src, src_center, tgt_center);
+            let tgt_edge = node_edge_point(tgt, tgt_center, src_center);
+            
+            // Transform to screen coordinates
+            let src_screen = transform.world_to_screen(src_edge);
+            let tgt_screen = transform.world_to_screen(tgt_edge);
+            
+            let is_selected = interaction.selected_link == Some(link.id);
+            let stroke_color = if is_selected { selected_link_color } else { link_color };
+            let stroke_width = if is_selected { 2.5 } else { 1.5 };
+            
+            match link.style {
+                LinkStyle::Solid => {
+                    painter.line_segment(
+                        [src_screen, tgt_screen],
+                        Stroke::new(stroke_width, stroke_color),
+                    );
+                }
+                LinkStyle::Dashed => {
+                    // Draw dashed line
+                    let direction = tgt_screen - src_screen;
+                    let length = direction.length();
+                    if length > 0.0 {
+                        let dir = direction / length;
+                        let dash_length = 8.0 * transform.zoom;
+                        let gap_length = 4.0 * transform.zoom;
+                        let mut pos = src_screen;
+                        let mut in_dash = true;
+                        let mut seg_start = pos;
+                        
+                        while (pos - src_screen).length() < length {
+                            let step = if in_dash { dash_length } else { gap_length };
+                            let next = pos + dir * step;
+                            // Check if we've gone past the target
+                            let t = (next - src_screen).length() / length;
+                            if t > 1.0 {
+                                // Draw final segment to target
+                                if in_dash {
+                                    painter.line_segment(
+                                        [seg_start, tgt_screen],
+                                        Stroke::new(stroke_width, stroke_color),
+                                    );
+                                }
+                                break;
+                            }
+                            if in_dash {
+                                painter.line_segment(
+                                    [seg_start, next],
+                                    Stroke::new(stroke_width, stroke_color),
+                                );
+                            }
+                            seg_start = next;
+                            pos = next;
+                            in_dash = !in_dash;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Draw preview line while creating a link (from source to cursor)
+    if link_mode && interaction.link_source.is_some() {
+        if let Some(source_id) = interaction.link_source {
+            if let Some(source_node) = project.get_node(source_id) {
+                let source_center = pos2(source_node.x as f32, source_node.y as f32);
+                if let Some(pointer_pos) = painter.ctx().input(|i| i.pointer.hover_pos()) {
+                    let world_pos = transform.screen_to_world(pointer_pos);
+                    let src_edge = node_edge_point(source_node, source_center, world_pos);
+                    let src_screen = transform.world_to_screen(src_edge);
+                    
+                    painter.line_segment(
+                        [src_screen, pointer_pos],
+                        Stroke::new(1.5, Color32::from_rgba_unmultiplied(100, 150, 255, 180)),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Calculate the distance from a point to a line segment
+fn distance_point_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = b - a;
+    let ap = p - a;
+    let len_sq = ab.dot(ab);
+    if len_sq < 0.0001 {
+        return ap.length();
+    }
+    let t = (ap.dot(ab) / len_sq).clamp(0.0, 1.0);
+    let projection = a + ab * t;
+    (p - projection).length()
+}
+
+/// Calculate the point on a node's edge where a line from the node center toward
+/// the target direction intersects the node's bounding box.
+fn node_edge_point(node: &Node, center: Pos2, toward: Pos2) -> Pos2 {
+    let (node_w, node_h) = node.size();
+    let half_w = (node_w / 2.0) as f32;
+    let half_h = (node_h / 2.0) as f32;
+    
+    let direction = toward - center;
+    
+    // Handle edge case: same position
+    if direction.length() < 0.001 {
+        return center;
+    }
+    
+    let dx = direction.x;
+    let dy = direction.y;
+    
+    // Calculate intersection with the bounding box edges
+    let mut t = f32::MAX;
+    
+    if dx.abs() > 0.001 {
+        let t_x = if dx > 0.0 { half_w / dx } else { -half_w / dx };
+        if t_x > 0.0 && t_x < t {
+            t = t_x;
+        }
+    }
+    if dy.abs() > 0.001 {
+        let t_y = if dy > 0.0 { half_h / dy } else { -half_h / dy };
+        if t_y > 0.0 && t_y < t {
+            t = t_y;
+        }
+    }
+    
+    if t == f32::MAX {
+        center
+    } else {
+        center + direction.normalized() * t
+    }
 }
 
 /// Draw the background grid

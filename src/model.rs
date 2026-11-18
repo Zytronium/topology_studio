@@ -245,4 +245,72 @@ mod tests {
         assert_eq!(NodeType::Cloud.label(), "Cloud");
         assert_eq!(NodeType::WirelessAP.label(), "Wireless AP");
     }
+
+    #[test]
+    fn test_link_style_solid() {
+        let n1 = Node::new(NodeType::Router, 0.0, 0.0);
+        let n2 = Node::new(NodeType::Switch, 100.0, 0.0);
+        let link = Link::new(n1.id, n2.id, LinkStyle::Solid);
+        assert_eq!(link.style, LinkStyle::Solid);
+    }
+
+    #[test]
+    fn test_link_style_dashed() {
+        let n1 = Node::new(NodeType::Router, 0.0, 0.0);
+        let n2 = Node::new(NodeType::Cloud, 100.0, 0.0);
+        let link = Link::new(n1.id, n2.id, LinkStyle::Dashed);
+        assert_eq!(link.style, LinkStyle::Dashed);
+    }
+
+    #[test]
+    fn test_multiple_links() {
+        let mut project = TopologyProject::new();
+        let n1 = Node::new(NodeType::Router, 0.0, 0.0);
+        let n2 = Node::new(NodeType::Switch, 100.0, 0.0);
+        let n3 = Node::new(NodeType::PC, 200.0, 0.0);
+        project.add_node(n1.clone());
+        project.add_node(n2.clone());
+        project.add_node(n3.clone());
+        project.add_link(Link::new(n1.id, n2.id, LinkStyle::Solid));
+        project.add_link(Link::new(n2.id, n3.id, LinkStyle::Dashed));
+        assert_eq!(project.links.len(), 2);
+        assert_eq!(project.links[0].style, LinkStyle::Solid);
+        assert_eq!(project.links[1].style, LinkStyle::Dashed);
+    }
+
+    #[test]
+    fn test_remove_node_cascades_to_all_links() {
+        let mut project = TopologyProject::new();
+        let n1 = Node::new(NodeType::Router, 0.0, 0.0);
+        let n2 = Node::new(NodeType::Switch, 100.0, 0.0);
+        let n3 = Node::new(NodeType::PC, 200.0, 0.0);
+        project.add_node(n1.clone());
+        project.add_node(n2.clone());
+        project.add_node(n3.clone());
+        project.add_link(Link::new(n1.id, n2.id, LinkStyle::Solid));
+        project.add_link(Link::new(n2.id, n3.id, LinkStyle::Solid));
+        assert_eq!(project.links.len(), 2);
+        // Remove the middle node — both links should be removed
+        project.remove_node(n2.id);
+        assert_eq!(project.nodes.len(), 2);
+        assert_eq!(project.links.len(), 0);
+    }
+
+    #[test]
+    fn test_link_json_roundtrip() {
+        let mut project = TopologyProject::new();
+        let n1 = Node::new(NodeType::Router, 100.0, 200.0);
+        let n2 = Node::new(NodeType::PC, 300.0, 400.0);
+        project.add_node(n1.clone());
+        project.add_node(n2.clone());
+        project.add_link(Link::new(n1.id, n2.id, LinkStyle::Dashed));
+
+        let json = serde_json::to_string(&project).unwrap();
+        let restored: TopologyProject = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.links.len(), 1);
+        assert_eq!(restored.links[0].source, n1.id);
+        assert_eq!(restored.links[0].target, n2.id);
+        assert_eq!(restored.links[0].style, LinkStyle::Dashed);
+    }
 }

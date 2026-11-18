@@ -2,7 +2,7 @@ use egui::*;
 use crate::canvas::{canvas_ui, CanvasTransform, CanvasInteraction};
 use crate::model::TopologyProject;
 use crate::theme::AppTheme;
-use crate::palette::{PaletteState, palette_ui};
+use crate::palette::{PaletteState, palette_ui, links_ui};
 use crate::icons;
 
 pub struct TopologyApp {
@@ -67,6 +67,7 @@ impl eframe::App for TopologyApp {
                     ui.label("Undo");
                     ui.label("Redo");
                 });
+
                 ui.add_space(ui.available_width() * 0.3);
                 ui.label("Network Topology Studio");
                 ui.add_space(8.0);
@@ -85,16 +86,25 @@ impl eframe::App for TopologyApp {
             });
         });
 
-        // Left palette panel
+        // Left palette panel (scrollable when content exceeds window height)
         egui::SidePanel::left("palette_panel")
             .default_width(160.0)
             .resizable(false)
             .show(ctx, |ui| {
-                palette_ui(ui, &mut self.palette_state);
+                egui::ScrollArea::vertical()
+                    .auto_shrink(false)
+                    .show(ui, |ui| {
+                        palette_ui(ui, &mut self.palette_state);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        links_ui(ui, &mut self.palette_state.selected_link_style);
+                    });
             });
 
         // Capture palette selection before canvas consumes it
         let place_type = self.palette_state.selected_type;
+        let link_mode = self.palette_state.is_link_mode();
+        let link_style = self.palette_state.link_style();
 
         // Central canvas panel
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -106,11 +116,24 @@ impl eframe::App for TopologyApp {
                 place_type,
                 self.palette_state.drag_type(),
                 self.palette_drag_ended,
+                link_mode,
+                link_style,
             );
 
             // Clear palette selection after placing a node (click-to-place)
             if result.node_added {
                 self.palette_state.selected_type = None;
+            }
+
+            // Clear link mode after adding or deleting a link (single-link mode)
+            if result.link_added || result.link_deleted {
+                self.palette_state.selected_link_style = None;
+                self.canvas_interaction.link_source = None;
+            }
+
+            // Handle context menu link style activation (after clear, so it takes precedence)
+            if let Some(style) = result.context_link_style {
+                self.palette_state.selected_link_style = Some(style);
             }
 
             // Clear drag state after processing
