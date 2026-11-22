@@ -1,0 +1,117 @@
+{
+  "nodes": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "node_type": "Router",
+      "label": "Core Router",
+      "x": -150.0,
+      "y": 25.0
+    },
+    {
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "node_type": "Switch",
+      "label": "Distribution Switch",
+      "x": 50.0,
+      "y": -75.0
+    },
+    {
+      "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "node_type": "Firewall",
+      "label": "Edge Firewall",
+      "x": -250.0,
+      "y": -75.0
+    },
+    {
+      "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "node_type": "PC",
+      "label": "Workstation 1",
+      "x": 250.0,
+      "y": -125.0
+    },
+    {
+      "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "node_type": "Server",
+      "label": "File Server",
+      "x": 250.0,
+      "y": 25.0
+    },
+    {
+      "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "node_type": "Cloud",
+      "label": "Internet",
+      "x": -250.0,
+      "y": 125.0
+    },
+    {
+      "id": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "node_type": "WirelessAP",
+      "label": "WiFi Access Point",
+      "x": 50.0,
+      "y": 125.0
+    },
+    {
+      "id": "5d11c9f2-c5ee-444a-b76a-5f9de34030ad",
+      "node_type": "PC",
+      "label": "Laptop 1",
+      "x": -29.37109375,
+      "y": 247.87890625
+    },
+    {
+      "id": "412cede2-d1e8-44ed-a0b4-3a4840c01633",
+      "node_type": "PC",
+      "label": "Laptop 2",
+      "x": 126.90625,
+      "y": 249.09765625
+    }
+  ],
+  "links": [
+    {
+      "id": "11111111-2222-3333-4444-555555555555",
+      "source": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "target": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "style": "Solid"
+    },
+    {
+      "id": "22222222-3333-4444-5555-666666666666",
+      "source": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "target": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "style": "Solid"
+    },
+    {
+      "id": "33333333-4444-5555-6666-777777777777",
+      "source": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "target": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "style": "Solid"
+    },
+    {
+      "id": "44444444-5555-6666-7777-888888888888",
+      "source": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "target": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "style": "Solid"
+    },
+    {
+      "id": "55555555-6666-7777-8888-999999999999",
+      "source": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+      "target": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+      "style": "Solid"
+    },
+    {
+      "id": "07a5c6d5-aa91-4d63-a67d-244b25f1923e",
+      "source": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "target": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "style": "Solid"
+    },
+    {
+      "id": "cf5fbdb4-d5ed-4527-a0fc-191456cf7ede",
+      "source": "5d11c9f2-c5ee-444a-b76a-5f9de34030ad",
+      "target": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "style": "Dashed"
+    },
+    {
+      "id": "7f655401-021a-4afc-a34e-6db86eda0696",
+      "source": "412cede2-d1e8-44ed-a0b4-3a4840c01633",
+      "target": "a7b8c9d0-e1f2-3456-abcd-567890123456",
+      "style": "Dashed"
+    }
+  ]
+}

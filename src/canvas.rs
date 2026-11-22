@@ -8,6 +8,9 @@ use crate::icons;
 pub struct CanvasTransform {
     pub offset: Pos2,
     pub zoom: f32,
+    /// The screen rectangle of the canvas area (set each frame from the UI layout).
+    /// All screen-to-world conversions are relative to this rect's min corner.
+    pub canvas_rect: Rect,
 }
 
 impl Default for CanvasTransform {
@@ -15,6 +18,7 @@ impl Default for CanvasTransform {
         Self {
             offset: Pos2::ZERO,
             zoom: 1.0,
+            canvas_rect: Rect::ZERO,
         }
     }
 }
@@ -23,15 +27,26 @@ impl CanvasTransform {
     const MIN_ZOOM: f32 = 0.1;
     const MAX_ZOOM: f32 = 8.0;
 
-    /// Convert screen coordinates to world coordinates
+    /// Initialize the transform so that world (0,0) is at the center of the visible canvas.
+    pub fn init_with_canvas_rect(&mut self, canvas_rect: Rect) {
+        self.canvas_rect = canvas_rect;
+        // world_to_screen(0,0) = offset + canvas_rect.min, so offset = center - min
+        // makes world (0,0) appear at the center of the canvas rect
+        let v: Vec2 = canvas_rect.center().to_vec2() - canvas_rect.min.to_vec2();
+        self.offset = Pos2::new(v.x, v.y);
+    }
+
+    /// Convert screen coordinates to world coordinates.
+    /// Screen coordinates are relative to the entire window; the canvas_rect.min is subtracted
+    /// so that (0,0) world is relative to the canvas area, not the window origin.
     pub fn screen_to_world(&self, screen: Pos2) -> Pos2 {
-        let v: Vec2 = (screen - self.offset) / self.zoom;
+        let v: Vec2 = (screen.to_vec2() - self.canvas_rect.min.to_vec2() - self.offset.to_vec2()) / self.zoom;
         Pos2::new(v.x, v.y)
     }
 
-    /// Convert world coordinates to screen coordinates
+    /// Convert world coordinates to screen coordinates.
     pub fn world_to_screen(&self, world: Pos2) -> Pos2 {
-        let v: Vec2 = world.to_vec2() * self.zoom + self.offset.to_vec2();
+        let v: Vec2 = world.to_vec2() * self.zoom + self.offset.to_vec2() + self.canvas_rect.min.to_vec2();
         Pos2::new(v.x, v.y)
     }
 }
@@ -131,6 +146,8 @@ pub struct CanvasResult {
     pub node_added: bool,
     pub node_deleted: bool,
     pub node_moved: bool,
+    /// True if a node was moved during the current drag session (persists after drag ends)
+    pub node_moved_in_drag: bool,
     pub node_renamed: bool,
     pub link_added: bool,
     pub link_deleted: bool,
@@ -161,6 +178,7 @@ pub fn canvas_ui(
         node_added: false,
         node_deleted: false,
         node_moved: false,
+        node_moved_in_drag: false,
         node_renamed: false,
         link_added: false,
         link_deleted: false,
@@ -171,6 +189,18 @@ pub fn canvas_ui(
     let rect = response.rect;
     let visuals = ui.visuals();
     let bg_color = visuals.extreme_bg_color;
+
+    // Initialize transform with canvas rect on first frame (when canvas_rect is still Rect::ZERO)
+    // On resize, adjust the offset so the visual center stays locked in place
+    let old_canvas_rect = transform.canvas_rect;
+    if transform.canvas_rect == Rect::ZERO {
+        transform.init_with_canvas_rect(rect);
+    } else {
+        // Window resized: adjust offset so the center of the visible canvas stays fixed
+        let center_delta = rect.center() - old_canvas_rect.center();
+        transform.offset = transform.offset + center_delta;
+        transform.canvas_rect = rect;
+    }
 
     // Draw background
     painter.rect_filled(rect, 0.0, bg_color);
@@ -636,7 +666,6 @@ pub fn canvas_ui(
 
         // Primary button released - stop dragging/panning
         if input.primary_released() {
-            interaction.dragging_node = None;
             interaction.is_panning = false;
         }
 
@@ -647,6 +676,7 @@ pub fn canvas_ui(
     }
 
     // --- DRAG NODE: works even when pointer leaves canvas ---
+    // Run BEFORE clearing dragging_node so the last drag position is recorded
     if let Some(dragging_id) = interaction.dragging_node {
         if let Some(global_pos) = global_pointer {
             let world_pos = transform.screen_to_world(global_pos);
@@ -654,6 +684,7 @@ pub fn canvas_ui(
                 node.x = world_pos.x as f64;
                 node.y = world_pos.y as f64;
                 result.node_moved = true;
+                result.node_moved_in_drag = true;
             }
         }
     }
@@ -667,6 +698,7 @@ pub fn canvas_ui(
     }
 
     // Clear dragging/panning if pointer button is released (even outside canvas)
+    // This must come AFTER the drag block so the drag block runs one last time
     if input.primary_released() {
         interaction.dragging_node = None;
         interaction.is_panning = false;

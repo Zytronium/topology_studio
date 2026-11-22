@@ -1,5 +1,7 @@
 mod app;
 mod canvas;
+mod commands;
+mod clipboard;
 mod icons;
 mod model;
 mod palette;
