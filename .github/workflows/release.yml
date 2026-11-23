@@ -136,7 +136,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: universal-apple-darwin
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -176,15 +176,20 @@ jobs:
           iconutil -c icns icon.iconset -o assets/icon.icns
           rm -rf icon.iconset assets/icon_1024.png
 
-      - name: Build release (universal)
-        run: cargo build --release --target universal-apple-darwin
+      - name: Build release (aarch64 + x86_64)
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          lipo -create -output target/topology_studio \
+            target/aarch64-apple-darwin/release/topology_studio \
+            target/x86_64-apple-darwin/release/topology_studio
 
       - name: Create .app bundle
         run: |
           APP_NAME="Network Topology Studio.app"
           mkdir -p "$APP_NAME/Contents/MacOS"
           mkdir -p "$APP_NAME/Contents/Resources"
-          cp target/universal-apple-darwin/release/topology_studio "$APP_NAME/Contents/MacOS/"
+          cp target/topology_studio "$APP_NAME/Contents/MacOS/"
           cp assets/icon.icns "$APP_NAME/Contents/Resources/"
           cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
           <?xml version="1.0" encoding="UTF-8"?>
