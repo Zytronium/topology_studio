@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Network Topology Studio
+Comment=Visual network topology editor and designer
+Exec=topology_studio
+Icon=topology_studio
+Terminal=false
+Type=Application
+Categories=Development;Graphics;

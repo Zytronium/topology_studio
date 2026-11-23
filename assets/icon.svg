@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Network Topology Studio icon">
+    <circle cx="256" cy="256" r="256" fill="#0a0a0a"/>
+    <g transform="translate(0 14)" fill="none" stroke="#5c5c5c" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M256 140V184M160 184H352M160 184V224M352 184V224"/>
+        <path d="M160 280V330M100 330H220M100 330V354M220 330V354"/>
+        <path d="M352 280V330M292 330H412M292 330V354M412 330V354"/>
+    </g>
+    <g transform="translate(0 14)">
+        <rect x="216" y="76" width="80" height="64" rx="16" fill="#ffffff"/>
+        <rect x="124" y="224" width="72" height="56" rx="14" fill="#8a8a8a"/>
+        <rect x="316" y="224" width="72" height="56" rx="14" fill="#8a8a8a"/>
+        <circle cx="100" cy="380" r="26" fill="#ffffff"/>
+        <circle cx="220" cy="380" r="26" fill="#ffffff"/>
+        <circle cx="292" cy="380" r="26" fill="#ffffff"/>
+        <circle cx="412" cy="380" r="26" fill="#ffffff"/>
+    </g>
+</svg>
