@@ -208,7 +208,7 @@ pub fn canvas_ui(
     // Draw grid
     draw_grid(&painter, rect, transform, bg_color);
 
-    // === LINK RENDERING ===
+    // === LINK RENDERING === (before nodes so node backgrounds cover link endpoints)
     draw_links(&painter, project, transform, interaction, visuals, link_mode);
 
     // === NODE RENDERING ===

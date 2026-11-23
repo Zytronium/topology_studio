@@ -6,6 +6,7 @@ use crate::palette::{PaletteState, palette_ui, links_ui};
 use crate::icons;
 use crate::commands::UndoRedoStack;
 use crate::clipboard::Clipboard;
+use crate::export::{self, ExportOptions};
 
 pub struct TopologyApp {
     pub project: TopologyProject,
@@ -24,14 +25,20 @@ pub struct TopologyApp {
     pub drag_start_project: Option<TopologyProject>,
     /// Whether the cursor was over the canvas last frame (for paste positioning)
     pub cursor_on_canvas: bool,
+    /// Export options for SVG export dialog
+    pub export_options: ExportOptions,
+    /// Whether to show the export options dialog
+    pub show_export_dialog: bool,
 }
 
 impl TopologyApp {
     pub fn new(_cc: &eframe::CreationContext) -> Self {
+        // Load saved theme or detect system theme
+        let theme = AppTheme::load();
         Self {
             project: TopologyProject::new(),
             transform: CanvasTransform::default(),
-            theme: AppTheme::Light,
+            theme,
             palette_state: PaletteState::default(),
             canvas_interaction: CanvasInteraction::default(),
             palette_drag_ended: false,
@@ -41,6 +48,47 @@ impl TopologyApp {
             unsaved_changes: false,
             drag_start_project: None,
             cursor_on_canvas: false,
+            export_options: ExportOptions::default(),
+            show_export_dialog: false,
+        }
+    }
+
+    /// Show the export options dialog.
+    fn show_export_dialog(&mut self, ctx: &egui::Context) {
+        egui::Window::new("Export SVG")
+            .collapsible(false)
+            .resizable(false)
+            .default_size([220.0, 140.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.checkbox(&mut self.export_options.dark_mode, "Dark mode");
+                ui.checkbox(&mut self.export_options.show_grid, "Show grid lines");
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Export").clicked() {
+                        self.do_export_svg();
+                        self.show_export_dialog = false;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_export_dialog = false;
+                    }
+                });
+            });
+    }
+
+    /// Export the current project to an SVG file.
+    fn do_export_svg(&mut self) {
+        let result = rfd::FileDialog::new()
+            .add_filter("SVG", &["svg"])
+            .set_file_name("topology.svg")
+            .save_file();
+        let path = match result {
+            Some(p) => p.to_string_lossy().to_string(),
+            None => return,
+        };
+        let svg = export::export_to_svg(&self.project, &self.export_options);
+        if let Err(e) = std::fs::write(&path, svg) {
+            eprintln!("Failed to export SVG: {}", e);
         }
     }
 
@@ -247,7 +295,9 @@ impl eframe::App for TopologyApp {
                     }
                     ui.separator();
                     if ui.button("Export SVG").clicked() {
-                        // TODO: SVG export (Milestone 5)
+                        // Default dark_mode to match the current app theme
+                        self.export_options.dark_mode = matches!(self.theme, AppTheme::Dark);
+                        self.show_export_dialog = true;
                     }
                 });
                 ui.menu_button("Edit", |ui| {
@@ -307,6 +357,8 @@ impl eframe::App for TopologyApp {
                         AppTheme::Light => AppTheme::Dark,
                         AppTheme::Dark => AppTheme::Light,
                     };
+                    // Save the theme preference
+                    self.theme.save();
                 }
             });
         });
@@ -408,6 +460,11 @@ impl eframe::App for TopologyApp {
                 let visuals = ctx.style().visuals.clone();
                 icons::draw_node_icon_preview(&painter, drag_node_type, pointer_pos, preview_size, &visuals);
             }
+        }
+
+        // === EXPORT OPTIONS DIALOG ===
+        if self.show_export_dialog {
+            self.show_export_dialog(ctx);
         }
     }
 }

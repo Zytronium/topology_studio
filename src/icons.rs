@@ -82,6 +82,11 @@ fn get_svg_string(node_type: NodeType) -> &'static str {
     }
 }
 
+/// Public accessor for SVG strings, used by the export module.
+pub fn get_svg_string_for_export(node_type: NodeType) -> &'static str {
+    get_svg_string(node_type)
+}
+
 // ---------------------------------------------------------------------------
 // Icon texture cache
 // ---------------------------------------------------------------------------
