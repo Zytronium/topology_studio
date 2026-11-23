@@ -98,20 +98,16 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Inkscape and ImageMagick
+      - name: Install ImageMagick
         run: |
-          choco install inkscape -y
           choco install imagemagick -y
 
       - name: Convert SVG icon to ICO
         run: |
-          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_temp.png
-          if (-not (Test-Path assets/icon_temp.png)) {
-              Write-Error "Inkscape failed to create icon_temp.png"
-              exit 1
+          # Use pre-generated icon.ico if available, otherwise convert from SVG
+          if (-not (Test-Path assets/icon.ico)) {
+            magick convert assets/icon.svg -define icon:auto-resize assets/icon.ico
           }
-          magick convert assets/icon_temp.png -define icon:auto-resize assets/icon.ico
-          Remove-Item assets/icon_temp.png
 
       - name: Build release
         run: cargo build --release
@@ -156,20 +152,11 @@ jobs:
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install SVG converter
-        run: |
-          # Try Inkscape first, fall back to librsvg if download fails
-          if ! brew install --cask inkscape 2>&1; then
-            echo "Inkscape download failed, installing librsvg as fallback"
-            brew install librsvg
-          fi
+        run: brew install librsvg
 
       - name: Convert SVG icon to ICNS
         run: |
-          if command -v inkscape &> /dev/null; then
-            inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_1024.png
-          else
-            rsvg-convert -w 1024 -h 1024 assets/icon.svg > assets/icon_1024.png
-          fi
+          rsvg-convert -w 1024 -h 1024 assets/icon.svg > assets/icon_1024.png
           mkdir -p icon.iconset
           sips -z 16 16 assets/icon_1024.png --out icon.iconset/icon_16x16.png
           sips -z 32 32 assets/icon_1024.png --out icon.iconset/icon_16x16@2x.png
