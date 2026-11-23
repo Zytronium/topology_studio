@@ -110,7 +110,11 @@ jobs:
 
       - name: Convert SVG icon to ICO
         run: |
-          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_temp.png
+          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_temp.png --without-gui
+          if (-not (Test-Path assets/icon_temp.png)) {
+              Write-Error "Inkscape failed to create icon_temp.png"
+              exit 1
+          }
           magick convert assets/icon_temp.png -define icon:auto-resize assets/icon.ico
           Remove-Item assets/icon_temp.png
 
