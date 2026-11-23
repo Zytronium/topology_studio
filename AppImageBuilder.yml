@@ -6,6 +6,18 @@ script:
   - cp target/release/topology_studio AppDir/usr/bin/topology_studio
   - mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
   - cp assets/icon.svg AppDir/usr/share/icons/hicolor/scalable/apps/topology_studio.svg
+  - mkdir -p AppDir/usr/share/applications
+  - |
+    cat > AppDir/usr/share/applications/com.topology_studio.app.desktop << 'DESKTOP'
+    [Desktop Entry]
+    Type=Application
+    Name=Topology Studio
+    Comment=Network Topology Studio
+    Exec=topology_studio
+    Icon=topology_studio
+    Terminal=false
+    Categories=Development;
+    DESKTOP
 
 AppDir:
   path: ./AppDir
