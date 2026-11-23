@@ -852,8 +852,8 @@ pub fn canvas_ui(
     } else if !ctrl_held_kb {
         // Arrow keys without Ctrl: pan the canvas
         if arrow_left || arrow_right || arrow_up || arrow_down {
-            let pan_dx = if arrow_right { pan_speed } else if arrow_left { -pan_speed } else { 0.0 };
-            let pan_dy = if arrow_down { pan_speed } else if arrow_up { -pan_speed } else { 0.0 };
+            let pan_dx = if arrow_right { -pan_speed } else if arrow_left { pan_speed } else { 0.0 };
+            let pan_dy = if arrow_down { -pan_speed } else if arrow_up { pan_speed } else { 0.0 };
             transform.offset = transform.offset + vec2(pan_dx, pan_dy);
         }
     }
