@@ -160,12 +160,21 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install Inkscape
-        run: brew install --cask inkscape
+      - name: Install SVG converter
+        run: |
+          # Try Inkscape first, fall back to librsvg if download fails
+          if ! brew install --cask inkscape 2>&1; then
+            echo "Inkscape download failed, installing librsvg as fallback"
+            brew install librsvg
+          fi
 
       - name: Convert SVG icon to ICNS
         run: |
-          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_1024.png
+          if command -v inkscape &> /dev/null; then
+            inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_1024.png
+          else
+            rsvg-convert -w 1024 -h 1024 assets/icon.svg > assets/icon_1024.png
+          fi
           mkdir -p icon.iconset
           sips -z 16 16 assets/icon_1024.png --out icon.iconset/icon_16x16.png
           sips -z 32 32 assets/icon_1024.png --out icon.iconset/icon_16x16@2x.png
