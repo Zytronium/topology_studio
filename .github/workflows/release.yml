@@ -94,7 +94,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: Topology*.AppImage
+          files: |
+            Topology*.AppImage
+            Topology*.AppImage.zsync
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -168,7 +170,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: topology_studio_${RELEASE_TAG#v}_amd64.deb
+          files: topology_studio_*_amd64.deb
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -177,7 +179,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: topology_studio-${RELEASE_TAG#v}-1.x86_64.rpm
+          files: topology_studio-*.x86_64.rpm
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -326,7 +328,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: output/TopologyStudio-*-setup.exe
+          files: installer/output/TopologyStudio-*-setup.exe
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

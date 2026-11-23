@@ -52,4 +52,4 @@ AppDir:
 
 AppImage:
   arch: x86_64
-  update-information: None
+  update-information: gh-releases-zsync|Zytronium|topology_studio|latest|*x86_64.AppImage.zsync
