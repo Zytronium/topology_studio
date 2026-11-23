@@ -19,6 +19,7 @@ AppDir:
   app_info:
     id: com.topology_studio.app
     name: Topology Studio
+    version: "{{RELEASE_TAG}}"
     icon: icon
     exec: topology_studio
     terminal: false

@@ -118,7 +118,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ruby ruby-dev build-essential rpm
           gem install --user-install --no-document fpm
-          echo "$HOME/.local/share/gem/ruby/3.3.0/bin" >> "$GITHUB_PATH"
+          echo "$(ruby -e 'puts Gem.user_dir')/bin" >> "$GITHUB_PATH"
 
       - name: Create package directory
         run: |
@@ -148,7 +148,6 @@ jobs:
             --description "Network Topology Studio" \
             --category Development \
             --license MIT \
-            --icon assets/icon.svg \
             -C package \
             .
 
@@ -162,7 +161,6 @@ jobs:
             --description "Network Topology Studio" \
             --category Development \
             --license MIT \
-            --icon assets/icon.svg \
             -C package \
             .
 
@@ -209,7 +207,7 @@ jobs:
           cat > com.topology_studio.app.yml << 'EOF'
           {
             "app-id": "com.topology_studio.app",
-            "runtime": "org.gnome.Runtime",
+            "runtime": "org.gnome.Platform",
             "runtime-version": "50",
             "sdk": "org.gnome.Sdk",
             "command": "topology_studio",
@@ -357,7 +355,7 @@ jobs:
           $xml = @"
           <?xml version="1.0" encoding="utf-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Name="Topology Studio" Language="1033" Version="$version.0" Manufacturer="Zytronium" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+            <Product Name="Topology Studio" Language="1033" Version="$version.0" Manufacturer="Zytronium" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890" Id="*">
             <Package Id="*" Keywords="Installer" Description="Topology Studio Installer" Comments="" Manufacturer="Zytronium" InstallerVersion="200" Languages="1033" Compressed="yes" SummaryCodepage="1252">
               <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version is already installed." />
               <MediaTemplate />
