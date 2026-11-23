@@ -110,7 +110,7 @@ jobs:
 
       - name: Convert SVG icon to ICO
         run: |
-          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_temp.png --without-gui
+          inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_temp.png
           if (-not (Test-Path assets/icon_temp.png)) {
               Write-Error "Inkscape failed to create icon_temp.png"
               exit 1
