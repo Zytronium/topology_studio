@@ -28,7 +28,7 @@ jobs:
 
   build-linux:
     name: Build Linux Binary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -94,7 +94,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: Topology Studio-x86_64.AppImage
+          files: Topology*.AppImage
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -355,29 +355,38 @@ jobs:
           $xml = @"
           <?xml version="1.0" encoding="utf-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Name="Topology Studio" Language="1033" Version="$version.0" Manufacturer="Zytronium" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890" Id="*">
-            <Package Id="*" Keywords="Installer" Description="Topology Studio Installer" Comments="" Manufacturer="Zytronium" InstallerVersion="200" Languages="1033" Compressed="yes" SummaryCodepage="1252">
+            <Product Id="*" Name="Topology Studio" Language="1033" Version="$version.0" Manufacturer="Zytronium" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+              <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" Platform="x64" Description="Topology Studio Installer" Manufacturer="Zytronium" />
               <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version is already installed." />
-              <MediaTemplate />
+              <MediaTemplate EmbedCab="yes" />
+
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFiles64Folder">
+                  <Directory Id="INSTALLDIR" Name="Topology Studio" />
+                </Directory>
+                <Directory Id="ProgramMenuFolder">
+                  <Directory Id="ApplicationProgramsFolder" Name="Topology Studio" />
+                </Directory>
+              </Directory>
+
+              <DirectoryRef Id="INSTALLDIR">
+                <Component Id="ApplicationComponent" Guid="B2C3D4E5-F678-90AB-CDEF-1234567890AB" Win64="yes">
+                  <File Id="TopologyStudioExe" Source="target\release\topology_studio.exe" KeyPath="yes" />
+                </Component>
+              </DirectoryRef>
+
+              <DirectoryRef Id="ApplicationProgramsFolder">
+                <Component Id="ShortcutComponent" Guid="C3D4E5F6-7890-ABCD-EF12-34567890ABCD" Win64="yes">
+                  <Shortcut Id="ApplicationShortcut" Name="Topology Studio" Target="[INSTALLDIR]topology_studio.exe" WorkingDirectory="INSTALLDIR" />
+                  <RemoveFolder Id="CleanupProgramMenu" On="uninstall" />
+                  <RegistryValue Root="HKCU" Key="Software\Zytronium\Topology Studio" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                </Component>
+              </DirectoryRef>
+
               <Feature Id="ProductFeature" Title="Topology Studio" Level="1">
                 <ComponentRef Id="ApplicationComponent" />
                 <ComponentRef Id="ShortcutComponent" />
               </Feature>
-              <StandardDirectory Id="ProgramFiles64Folder">
-                <Directory Id="INSTALLDIR" Name="Topology Studio">
-                  <Component Id="ApplicationComponent" Guid="{B2C3D4E5-F678-90AB-CDEF-1234567890AB}">
-                    <File Source="target\release\topology_studio.exe" KeyPath="yes" />
-                  </Component>
-                </Directory>
-              </StandardDirectory>
-              <StandardDirectory Id="ProgramMenuFolder">
-                <Component Id="ShortcutComponent" Guid="{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}">
-                  <Shortcut Id="ApplicationShortcut" Name="Topology Studio" Target="[INSTALLDIR]topology_studio.exe" WorkingDirectory="INSTALLDIR" />
-                  <RemoveFolder Id="CleanupProgramMenu" Directory="ProgramMenuFolder" On="uninstall" />
-                  <RegistryValue Root="HKCU" Key="Software\Zytronium\Topology Studio" Name="installed" Type="integer" Value="1" KeyPath="yes" />
-                </Component>
-              </StandardDirectory>
-            </Package>
             </Product>
           </Wix>
           "@
@@ -386,8 +395,10 @@ jobs:
       - name: Build MSI
         run: |
           $version = "${{ env.RELEASE_TAG }}".TrimStart('v')
-          candle wix\Product.wxs -out wix\Product.wixobj
-          light wix\Product.wixobj -out "TopologyStudio-$version.msi"
+          candle -arch x64 wix\Product.wxs -out wix\Product.wixobj
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          light -sval wix\Product.wixobj -out "TopologyStudio-$version.msi"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload MSI installer
         uses: softprops/action-gh-release@v2

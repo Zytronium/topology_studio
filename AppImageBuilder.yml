@@ -1,13 +1,26 @@
-# appimage-builder recipe see https://appimage-builder.readthedocs.io for details
 version: 1
 
+script:
+  - rm -rf AppDir || true
+  - mkdir -p AppDir/usr/bin
+  - cp target/release/topology_studio AppDir/usr/bin/topology_studio
+  - mkdir -p AppDir/usr/share/icons/hicolor/scalable/apps
+  - cp assets/icon.svg AppDir/usr/share/icons/hicolor/scalable/apps/topology_studio.svg
+
 AppDir:
-  path: AppDir
+  path: ./AppDir
+  app_info:
+    id: com.topology_studio.app
+    name: Topology Studio
+    icon: topology_studio
+    version: "{{RELEASE_TAG}}"
+    exec: usr/bin/topology_studio
+    exec_args: $@
   apt:
-    arch:
-      - amd64
+    arch: amd64
+    allow_unauthenticated: true
     sources:
-      - sourceline: deb http://archive.ubuntu.com/ubuntu/ jammy main restricted
+      - sourceline: deb http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
     include:
       - libgtk-3-0
       - libasound2
@@ -16,26 +29,15 @@ AppDir:
       - libxrandr2
       - libxcursor1
       - libgl1
-  app_info:
-    id: com.topology_studio.app
-    name: Topology Studio
-    version: "{{RELEASE_TAG}}"
-    icon: icon
-    exec: topology_studio
-    terminal: false
-    categories: Development;
-  filesets:
-    - root: target/release
-      files:
-        - topology_studio
-  desktopFiles:
-    - path: topology_studio.desktop
-      exec: topology_studio
-      icon: icon
-      name: Topology Studio
-      terminal: false
-      categories: Development;
+  files:
+    include: []
+    exclude:
+      - usr/share/man
+      - usr/share/doc/*/README.*
+      - usr/share/doc/*/changelog.*
+      - usr/share/doc/*/NEWS.*
+      - usr/share/doc/*/TODO.*
 
 AppImage:
   arch: x86_64
-  update-information: none
+  update-information: None
