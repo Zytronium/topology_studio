@@ -7,6 +7,19 @@
 
 * build errors ([bd00b49](https://github.com/Zytronium/topology_studio/commit/bd00b49149bfd1476e6aff3bf8aa6aa5874209ff))
 * even more build errors ([243ae5f](https://github.com/Zytronium/topology_studio/commit/243ae5f084b0c394455245cdaef6779d3b908e27))
+* I want to scream ([61ea7ac](https://github.com/Zytronium/topology_studio/commit/61ea7acbbb30bcb0ab544029a9b1b4d15ef294b9))
+* more build errors ([3f498ad](https://github.com/Zytronium/topology_studio/commit/3f498ad599e004fcee70e60ba3ebb8c243b040a5))
+* yet even more build errors ([3b8ae59](https://github.com/Zytronium/topology_studio/commit/3b8ae59f45b85fb068a241b0ff964da4b7bd9c5f))
+* yet not even more success errors ([4366837](https://github.com/Zytronium/topology_studio/commit/4366837907e67e9c756225ae61eff0ab44046f6f))
+* yet yes even more build errors ([1c9d916](https://github.com/Zytronium/topology_studio/commit/1c9d916afd002c6b581a81ea4d61b8942917c9de))
+
+## [1.0.1](https://github.com/Zytronium/topology_studio/compare/v1.0.1...v1.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* build errors ([bd00b49](https://github.com/Zytronium/topology_studio/commit/bd00b49149bfd1476e6aff3bf8aa6aa5874209ff))
+* even more build errors ([243ae5f](https://github.com/Zytronium/topology_studio/commit/243ae5f084b0c394455245cdaef6779d3b908e27))
 * more build errors ([3f498ad](https://github.com/Zytronium/topology_studio/commit/3f498ad599e004fcee70e60ba3ebb8c243b040a5))
 * yet even more build errors ([3b8ae59](https://github.com/Zytronium/topology_studio/commit/3b8ae59f45b85fb068a241b0ff964da4b7bd9c5f))
 * yet not even more success errors ([4366837](https://github.com/Zytronium/topology_studio/commit/4366837907e67e9c756225ae61eff0ab44046f6f))
