@@ -537,8 +537,6 @@ impl eframe::App for TopologyApp {
                     ui.checkbox(&mut self.settings.snap_to_grid, "Snap to grid");
                 });
 
-                ui.add_space(ui.available_width() * 0.3);
-                ui.label("Network Topology Studio");
             });
         });
 
