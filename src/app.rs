@@ -203,6 +203,8 @@ impl TopologyApp {
                     }
                     if ui.button("Discard").clicked() {
                         self.show_save_prompt = false;
+                        // Clear unsaved_changes so the close handler doesn't re-show this dialog
+                        self.unsaved_changes = false;
                         if let Some(action) = self.pending_action.take() {
                             match action {
                                 PendingAction::New => self.do_new(),
