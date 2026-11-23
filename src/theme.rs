@@ -50,7 +50,7 @@ fn detect_system_theme() -> AppTheme {
         if let Ok(value) = winreg::RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
         {
-            if let Ok(apps_light) = value.get_value::<u32, String>("AppsUseLightTheme") {
+            if let Ok(apps_light) = value.get_value::<u32, _>("AppsUseLightTheme") {
                 return if apps_light == 0 {
                     AppTheme::Dark
                 } else {
