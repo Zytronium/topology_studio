@@ -54,11 +54,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxcursor-dev libgl1-mesa-dev libasound2-dev inkscape
-
-      - name: Convert SVG icon to PNG
-        run: |
-          inkscape assets/icon.svg --export-type=png --export-filename=assets/topology_studio.png
+          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev libxcursor-dev libgl1-mesa-dev libasound2-dev
 
       - name: Build release
         run: cargo build --release
@@ -70,7 +66,6 @@ jobs:
           files: |
             target/release/topology_studio
             assets/topology_studio.desktop
-            assets/topology_studio.png
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
