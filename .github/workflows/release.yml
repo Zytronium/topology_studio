@@ -3,15 +3,18 @@ name: Release
 on:
   release:
     types: [published]
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      release_id:
-        description: "GitHub Release ID"
+      tag_name:
+        description: "Git tag for the release (e.g. v1.0.0)"
+        required: true
         type: string
-        required: false
 
 permissions:
   contents: write
+
+env:
+  RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag_name }}
 
 jobs:
   build-linux:
@@ -57,11 +60,12 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             target/release/topology_studio
             assets/topology_studio.desktop
             assets/topology_studio.png
-          name: "Topology Studio ${{ github.event.release.tag_name }}"
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -110,8 +114,9 @@ jobs:
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: target/release/topology_studio.exe
-          name: "Topology Studio ${{ github.event.release.tag_name }}"
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -206,7 +211,8 @@ jobs:
       - name: Upload release asset
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: "Network Topology Studio.app.zip"
-          name: "Topology Studio ${{ github.event.release.tag_name }}"
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
