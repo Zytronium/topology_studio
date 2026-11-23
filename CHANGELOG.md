@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove terminal window from Windows version ([c04d292](https://github.com/Zytronium/topology_studio/commit/c04d292037776f11d87c85b52dc7a3892b5a5bc2))
+
 ## [1.0.0](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.0) (2026-11-23)
 
 
