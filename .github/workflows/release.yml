@@ -145,6 +145,9 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
+      - name: Install Inkscape
+        run: brew install --cask inkscape
+
       - name: Convert SVG icon to ICNS
         run: |
           inkscape assets/icon.svg --export-type=png --export-filename=assets/icon_1024.png
