@@ -1,25 +1,41 @@
-/// Application theme mode
+/// User-selected theme mode
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum AppTheme {
+pub enum ThemeMode {
     #[default]
+    System,
     Light,
     Dark,
 }
 
-impl AppTheme {
-    /// Load the saved theme from the config file, or detect the system theme.
+/// Resolved theme (Light or Dark)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppTheme {
+    Light,
+    Dark,
+}
+
+impl ThemeMode {
+    /// Load the saved theme mode from the config file.
     pub fn load() -> Self {
-        // Try to load from config file first
         if let Some(saved) = load_theme_config() {
             return saved;
         }
-        // Fall back to system theme detection
-        detect_system_theme()
+        ThemeMode::System
     }
 
-    /// Save the theme preference to the config file.
+    /// Save the theme mode preference to the config file.
     pub fn save(&self) {
         save_theme_config(*self);
+    }
+
+    /// Resolve to the actual theme (Light or Dark).
+    /// If System, detects the system theme preference.
+    pub fn resolve(&self) -> AppTheme {
+        match self {
+            ThemeMode::Light => AppTheme::Light,
+            ThemeMode::Dark => AppTheme::Dark,
+            ThemeMode::System => detect_system_theme(),
+        }
     }
 }
 
@@ -93,20 +109,21 @@ fn config_file_path() -> Option<std::path::PathBuf> {
     Some(app_dir.join("config.json"))
 }
 
-/// Load the saved theme from the config file.
-fn load_theme_config() -> Option<AppTheme> {
+/// Load the saved theme mode from the config file.
+fn load_theme_config() -> Option<ThemeMode> {
     let path = config_file_path()?;
     let content = std::fs::read_to_string(&path).ok()?;
-    let config: ThemeConfig = serde_json::from_str(&content).ok()?;
-    match config.theme.as_str() {
-        "Dark" => Some(AppTheme::Dark),
-        "Light" => Some(AppTheme::Light),
+    let config: AppSettings = serde_json::from_str(&content).ok()?;
+    match config.theme_mode.as_str() {
+        "Dark" => Some(ThemeMode::Dark),
+        "Light" => Some(ThemeMode::Light),
+        "System" => Some(ThemeMode::System),
         _ => None,
     }
 }
 
-/// Save the theme preference to the config file.
-fn save_theme_config(theme: AppTheme) {
+/// Save the theme mode preference to the config file.
+fn save_theme_config(mode: ThemeMode) {
     let path = match config_file_path() {
         Some(p) => p,
         None => return,
@@ -120,24 +137,70 @@ fn save_theme_config(theme: AppTheme) {
         }
     }
 
-    let config = ThemeConfig {
-        theme: match theme {
-            AppTheme::Light => "Light".to_string(),
-            AppTheme::Dark => "Dark".to_string(),
-        },
+    // Load existing settings or create new ones
+    let mut settings = load_settings().unwrap_or_default();
+    settings.theme_mode = match mode {
+        ThemeMode::Light => "Light".to_string(),
+        ThemeMode::Dark => "Dark".to_string(),
+        ThemeMode::System => "System".to_string(),
     };
 
-    if let Ok(json) = serde_json::to_string_pretty(&config) {
+    if let Ok(json) = serde_json::to_string_pretty(&settings) {
         if let Err(e) = std::fs::write(&path, json) {
             eprintln!("Failed to save theme config: {}", e);
         }
     }
 }
 
-/// Config file structure for theme persistence.
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-struct ThemeConfig {
-    theme: String,
+/// Load all app settings from the config file.
+fn load_settings() -> Option<AppSettings> {
+    let path = config_file_path()?;
+    let content = std::fs::read_to_string(&path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+/// Save all app settings to the config file.
+pub fn save_settings(settings: &AppSettings) {
+    let path = match config_file_path() {
+        Some(p) => p,
+        None => return,
+    };
+
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Failed to create config directory: {}", e);
+            return;
+        }
+    }
+
+    if let Ok(json) = serde_json::to_string_pretty(settings) {
+        if let Err(e) = std::fs::write(&path, json) {
+            eprintln!("Failed to save settings: {}", e);
+        }
+    }
+}
+
+/// Load all app settings.
+pub fn load_settings_public() -> AppSettings {
+    load_settings().unwrap_or_default()
+}
+
+/// App settings stored in config file.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
+pub struct AppSettings {
+    pub theme_mode: String,
+    pub snap_to_grid: bool,
+    pub autosave: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            theme_mode: "System".to_string(),
+            snap_to_grid: false,
+            autosave: false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -145,18 +208,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_theme_default_is_light() {
-        assert_eq!(AppTheme::default(), AppTheme::Light);
+    fn test_theme_mode_default_is_system() {
+        assert_eq!(ThemeMode::default(), ThemeMode::System);
     }
 
     #[test]
-    fn test_theme_config_serialization() {
-        let config = ThemeConfig {
-            theme: "Dark".to_string(),
+    fn test_theme_mode_resolve_light() {
+        assert_eq!(ThemeMode::Light.resolve(), AppTheme::Light);
+    }
+
+    #[test]
+    fn test_theme_mode_resolve_dark() {
+        assert_eq!(ThemeMode::Dark.resolve(), AppTheme::Dark);
+    }
+
+    #[test]
+    fn test_settings_serialization() {
+        let settings = AppSettings {
+            theme_mode: "Dark".to_string(),
+            snap_to_grid: true,
+            autosave: false,
         };
-        let json = serde_json::to_string(&config).unwrap();
-        let restored: ThemeConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.theme, "Dark");
+        let json = serde_json::to_string(&settings).unwrap();
+        let restored: AppSettings = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.theme_mode, "Dark");
+        assert!(restored.snap_to_grid);
+        assert!(!restored.autosave);
+    }
+
+    #[test]
+    fn test_settings_default() {
+        let settings = AppSettings::default();
+        assert_eq!(settings.theme_mode, "System");
+        assert!(!settings.snap_to_grid);
+        assert!(!settings.autosave);
     }
 
     #[test]

@@ -1,17 +1,25 @@
 use egui::*;
 use crate::canvas::{canvas_ui, CanvasTransform, CanvasInteraction};
 use crate::model::TopologyProject;
-use crate::theme::AppTheme;
+use crate::theme::{ThemeMode, AppTheme, AppSettings, save_settings, load_settings_public};
 use crate::palette::{PaletteState, palette_ui, links_ui};
 use crate::icons;
 use crate::commands::UndoRedoStack;
 use crate::clipboard::Clipboard;
 use crate::export::{self, ExportOptions};
 
+/// Action pending after the user confirms they want to discard or save changes.
+#[derive(Clone, Copy)]
+enum PendingAction {
+    New,
+    Open,
+    Close,
+}
+
 pub struct TopologyApp {
     pub project: TopologyProject,
     pub transform: CanvasTransform,
-    pub theme: AppTheme,
+    pub theme_mode: ThemeMode,
     pub palette_state: PaletteState,
     pub canvas_interaction: CanvasInteraction,
     pub palette_drag_ended: bool,
@@ -29,16 +37,29 @@ pub struct TopologyApp {
     pub export_options: ExportOptions,
     /// Whether to show the export options dialog
     pub show_export_dialog: bool,
+    /// App settings (snap to grid, autosave, etc.)
+    pub settings: AppSettings,
+    /// Whether to show the settings dialog
+    pub show_settings: bool,
+    /// Snapshot of project state before a nudge session started (for undo batching)
+    pub nudge_start_project: Option<TopologyProject>,
+    /// Timer for autosave (seconds remaining until next save)
+    pub autosave_timer: f64,
+    /// Whether to show the "Save Changes?" dialog
+    pub show_save_prompt: bool,
+    /// Action to perform after the user confirms the save prompt
+    pub pending_action: Option<PendingAction>,
 }
 
 impl TopologyApp {
     pub fn new(_cc: &eframe::CreationContext) -> Self {
-        // Load saved theme or detect system theme
-        let theme = AppTheme::load();
+        // Load saved theme mode and settings
+        let theme_mode = ThemeMode::load();
+        let settings = load_settings_public();
         Self {
             project: TopologyProject::new(),
             transform: CanvasTransform::default(),
-            theme,
+            theme_mode,
             palette_state: PaletteState::default(),
             canvas_interaction: CanvasInteraction::default(),
             palette_drag_ended: false,
@@ -50,6 +71,12 @@ impl TopologyApp {
             cursor_on_canvas: false,
             export_options: ExportOptions::default(),
             show_export_dialog: false,
+            settings,
+            show_settings: false,
+            nudge_start_project: None,
+            autosave_timer: 0.0,
+            show_save_prompt: false,
+            pending_action: None,
         }
     }
 
@@ -76,6 +103,61 @@ impl TopologyApp {
             });
     }
 
+    /// Show the settings dialog.
+    fn show_settings_dialog(&mut self, ctx: &egui::Context) {
+        egui::Window::new("Settings")
+            .collapsible(false)
+            .resizable(false)
+            .default_size([280.0, 180.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.heading("Settings");
+                ui.separator();
+                ui.add_space(4.0);
+
+                // Theme selection
+                ui.label("Theme:");
+                ui.horizontal(|ui| {
+                    let mut current = match self.theme_mode {
+                        ThemeMode::System => 0,
+                        ThemeMode::Light => 1,
+                        ThemeMode::Dark => 2,
+                    };
+                    if ui.radio_value(&mut current, 0, "System").clicked() {
+                        self.theme_mode = ThemeMode::System;
+                        self.theme_mode.save();
+                    }
+                    if ui.radio_value(&mut current, 1, "Light").clicked() {
+                        self.theme_mode = ThemeMode::Light;
+                        self.theme_mode.save();
+                    }
+                    if ui.radio_value(&mut current, 2, "Dark").clicked() {
+                        self.theme_mode = ThemeMode::Dark;
+                        self.theme_mode.save();
+                    }
+                });
+
+                ui.add_space(8.0);
+
+                // Snap to grid
+                ui.checkbox(&mut self.settings.snap_to_grid, "Snap to grid (20px)");
+
+                ui.add_space(8.0);
+
+                // Autosave
+                ui.checkbox(&mut self.settings.autosave, "Autosave");
+                if self.settings.autosave {
+                    ui.label(egui::RichText::new("Saves every 30 seconds when a file is open").size(11.0).weak());
+                }
+
+                ui.add_space(12.0);
+                if ui.button("Close").clicked() {
+                    self.show_settings = false;
+                    save_settings(&self.settings);
+                }
+            });
+    }
+
     /// Export the current project to an SVG file.
     fn do_export_svg(&mut self) {
         let result = rfd::FileDialog::new()
@@ -92,6 +174,75 @@ impl TopologyApp {
         }
     }
 
+    /// Show the "Save Changes?" dialog.
+    fn show_save_prompt_dialog(&mut self, ctx: &egui::Context) {
+        egui::Window::new("Save Changes?")
+            .collapsible(false)
+            .resizable(false)
+            .default_size([300.0, 100.0])
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                ui.label("Do you want to save your changes before continuing?");
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Save").clicked() {
+                        // Save first, then perform the pending action
+                        self.save_project();
+                        // Don't close the dialog yet — let the action happen next frame
+                        // if save succeeded (unsaved_changes cleared)
+                        if !self.unsaved_changes {
+                            self.show_save_prompt = false;
+                            if let Some(action) = self.pending_action.take() {
+                                match action {
+                                    PendingAction::New => self.do_new(),
+                                    PendingAction::Open => self.open_project(),
+                                    PendingAction::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                                }
+                            }
+                        }
+                    }
+                    if ui.button("Discard").clicked() {
+                        self.show_save_prompt = false;
+                        if let Some(action) = self.pending_action.take() {
+                            match action {
+                                PendingAction::New => self.do_new(),
+                                PendingAction::Open => self.open_project(),
+                                PendingAction::Close => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+                            }
+                        }
+                    }
+                    if ui.button("Cancel").clicked() {
+                        self.show_save_prompt = false;
+                        self.pending_action = None;
+                    }
+                });
+            });
+    }
+
+    /// Prompt the user to save changes if there are any, then perform the action.
+    /// Returns true if the action was deferred (dialog shown), false if executed immediately.
+    fn prompt_save_if_needed(&mut self, action: PendingAction) -> bool {
+        if self.unsaved_changes {
+            self.show_save_prompt = true;
+            self.pending_action = Some(action);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Reset the project to a new, empty state.
+    fn do_new(&mut self) {
+        self.project = TopologyProject::new();
+        self.transform = CanvasTransform::default();
+        self.canvas_interaction = CanvasInteraction::default();
+        self.undo_redo.clear();
+        self.current_file = None;
+        self.unsaved_changes = false;
+        self.autosave_timer = 0.0;
+        self.drag_start_project = None;
+    }
+
     /// Save the current project to a JSON file (uses current_file path, or prompts for one).
     fn save_project(&mut self) {
         if self.current_file.is_none() {
@@ -104,6 +255,7 @@ impl TopologyApp {
                 eprintln!("Failed to save project: {}", e);
             } else {
                 self.unsaved_changes = false;
+                self.autosave_timer = 0.0;
             }
         }
     }
@@ -124,6 +276,7 @@ impl TopologyApp {
             } else {
                 self.current_file = Some(path);
                 self.unsaved_changes = false;
+                self.autosave_timer = 0.0;
             }
         }
     }
@@ -141,6 +294,7 @@ impl TopologyApp {
                         self.project = project;
                         self.current_file = Some(path_str);
                         self.unsaved_changes = false;
+                        self.autosave_timer = 0.0;
                         self.undo_redo.clear();
                         self.canvas_interaction = CanvasInteraction::default();
                     }
@@ -190,8 +344,9 @@ impl TopologyApp {
 
 impl eframe::App for TopologyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Set theme
-        match self.theme {
+        // Set theme based on theme mode
+        let resolved_theme = self.theme_mode.resolve();
+        match resolved_theme {
             AppTheme::Light => ctx.set_theme(egui::Theme::Light),
             AppTheme::Dark => ctx.set_theme(egui::Theme::Dark),
         }
@@ -218,6 +373,16 @@ impl eframe::App for TopologyApp {
         let (ctrl, shift, key_z, key_y, key_s, key_o, pointer_released, event_copy, event_paste) =
             input_state.unwrap_or_default();
 
+        // === HANDLE WINDOW CLOSE ===
+        // Intercept close request to prompt for saving unsaved changes
+        let close_requested = ctx.input(|i| i.raw.viewport().close_requested());
+        if close_requested {
+            if self.prompt_save_if_needed(PendingAction::Close) {
+                // Dialog will be shown; prevent the window from closing
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+        }
+
         // Check if palette drag just ended
         self.palette_drag_ended = false;
         if self.palette_state.is_dragging() && pointer_released {
@@ -229,16 +394,19 @@ impl eframe::App for TopologyApp {
         if ctrl && key_z && !shift {
             self.undo_redo.undo(&mut self.project);
             self.unsaved_changes = true;
+            self.nudge_start_project = None;
         }
         // Ctrl+Shift+Z or Ctrl+Y: Redo
         if ctrl && (key_z && shift || key_y) {
             self.undo_redo.redo(&mut self.project);
             self.unsaved_changes = true;
+            self.nudge_start_project = None;
         }
         // Ctrl+C: Copy (use Event::Copy because egui intercepts Ctrl+C for TextEdit)
         if event_copy {
-            if let Some(node_id) = self.canvas_interaction.selected_node {
-                self.clipboard.copy_from(&self.project, &[node_id]);
+            let ids: Vec<uuid::Uuid> = self.canvas_interaction.selected_nodes.iter().copied().collect();
+            if !ids.is_empty() {
+                self.clipboard.copy_from(&self.project, &ids);
             }
         }
         // Ctrl+V: Paste (use Event::Paste because egui intercepts Ctrl+V for TextEdit)
@@ -250,9 +418,9 @@ impl eframe::App for TopologyApp {
                 let new_ids = self.clipboard.paste_into(&mut self.project, paste_x, paste_y);
                 self.undo_redo.execute(crate::commands::Command::new(before, self.project.clone()));
                 self.unsaved_changes = true;
-                // Select the first pasted node
-                if let Some(id) = new_ids.first() {
-                    self.canvas_interaction.selected_node = Some(*id);
+                // Select all pasted nodes
+                for id in &new_ids {
+                    self.canvas_interaction.selected_nodes.insert(*id);
                 }
             }
         }
@@ -266,7 +434,16 @@ impl eframe::App for TopologyApp {
         }
         // Ctrl+O: Open
         if ctrl && key_o {
-            self.open_project();
+            if !self.prompt_save_if_needed(PendingAction::Open) {
+                self.open_project();
+            }
+        }
+        // Ctrl+0: Reset zoom to 100% (check raw text input for "0")
+        if ctrl {
+            let has_zero = ctx.input(|i| i.events.iter().any(|ev| matches!(ev, egui::Event::Text(t) if t == "0")));
+            if has_zero {
+                self.transform.reset_zoom();
+            }
         }
 
         // === MARK UNSAVED CHANGES ===
@@ -276,16 +453,14 @@ impl eframe::App for TopologyApp {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
-                        self.project = TopologyProject::new();
-                        self.transform = CanvasTransform::default();
-                        self.canvas_interaction = CanvasInteraction::default();
-                        self.undo_redo.clear();
-                        self.current_file = None;
-                        self.unsaved_changes = false;
-                        self.drag_start_project = None;
+                        if !self.prompt_save_if_needed(PendingAction::New) {
+                            self.do_new();
+                        }
                     }
                     if ui.button("Open…").clicked() {
-                        self.open_project();
+                        if !self.prompt_save_if_needed(PendingAction::Open) {
+                            self.open_project();
+                        }
                     }
                     if ui.button("Save").clicked() {
                         self.save_project();
@@ -296,70 +471,74 @@ impl eframe::App for TopologyApp {
                     ui.separator();
                     if ui.button("Export SVG").clicked() {
                         // Default dark_mode to match the current app theme
-                        self.export_options.dark_mode = matches!(self.theme, AppTheme::Dark);
+                        self.export_options.dark_mode = matches!(resolved_theme, AppTheme::Dark);
                         self.show_export_dialog = true;
+                    }
+                    ui.separator();
+                    if ui.button("Settings").clicked() {
+                        self.show_settings = true;
                     }
                 });
                 ui.menu_button("Edit", |ui| {
                     let undo_enabled = self.undo_redo.can_undo();
                     if ui.add_enabled(undo_enabled, egui::Button::new("Undo")).clicked() {
                         self.undo_redo.undo(&mut self.project);
+                        self.unsaved_changes = true;
                     }
                     let redo_enabled = self.undo_redo.can_redo();
                     if ui.add_enabled(redo_enabled, egui::Button::new("Redo")).clicked() {
                         self.undo_redo.redo(&mut self.project);
+                        self.unsaved_changes = true;
                     }
                     ui.separator();
-                    let copy_enabled = self.canvas_interaction.selected_node.is_some();
+                    let copy_enabled = !self.canvas_interaction.selected_nodes.is_empty();
                     if ui.add_enabled(copy_enabled, egui::Button::new("Copy")).clicked() {
-                        if let Some(node_id) = self.canvas_interaction.selected_node {
-                            self.clipboard.copy_from(&self.project, &[node_id]);
+                        let ids: Vec<uuid::Uuid> = self.canvas_interaction.selected_nodes.iter().copied().collect();
+                        if !ids.is_empty() {
+                            self.clipboard.copy_from(&self.project, &ids);
                         }
                     }
                     let paste_enabled = !self.clipboard.is_empty();
                     if ui.add_enabled(paste_enabled, egui::Button::new("Paste")).clicked() {
-                        // Menu paste goes to the center of the visible canvas area
                         let (paste_x, paste_y) = self.paste_position(ctx);
                         let before = self.project.clone();
                         let new_ids = self.clipboard.paste_into(&mut self.project, paste_x, paste_y);
                         self.undo_redo.execute(crate::commands::Command::new(before, self.project.clone()));
-                        if let Some(id) = new_ids.first() {
-                            self.canvas_interaction.selected_node = Some(*id);
+                        for id in &new_ids {
+                            self.canvas_interaction.selected_nodes.insert(*id);
                         }
                     }
-                    let delete_enabled = self.canvas_interaction.selected_node.is_some()
+                    let delete_enabled = !self.canvas_interaction.selected_nodes.is_empty()
                         || self.canvas_interaction.selected_link.is_some();
                     if ui.add_enabled(delete_enabled, egui::Button::new("Delete")).clicked() {
                         let before = self.project.clone();
                         if let Some(link_id) = self.canvas_interaction.selected_link {
                             self.project.remove_link(link_id);
                             self.canvas_interaction.selected_link = None;
-                        } else if let Some(node_id) = self.canvas_interaction.selected_node {
-                            self.project.remove_node(node_id);
-                            self.canvas_interaction.selected_node = None;
+                        } else {
+                            let ids_to_remove: Vec<uuid::Uuid> = self.canvas_interaction.selected_nodes.iter().copied().collect();
+                            for node_id in &ids_to_remove {
+                                self.project.remove_node(*node_id);
+                            }
+                            self.canvas_interaction.selected_nodes.clear();
                             self.canvas_interaction.editing_node = None;
                         }
                         self.undo_redo.execute(crate::commands::Command::new(before, self.project.clone()));
                     }
                 });
+                ui.menu_button("View", |ui| {
+                    if ui.button("Zoom to Fit").clicked() {
+                        self.transform.zoom_to_fit(&self.project, 50.0);
+                    }
+                    if ui.button("Reset Zoom").clicked() {
+                        self.transform.reset_zoom();
+                    }
+                    ui.separator();
+                    ui.checkbox(&mut self.settings.snap_to_grid, "Snap to grid");
+                });
 
                 ui.add_space(ui.available_width() * 0.3);
                 ui.label("Network Topology Studio");
-                ui.add_space(8.0);
-
-                // Theme toggle
-                let theme_label = match self.theme {
-                    AppTheme::Light => "Light Mode",
-                    AppTheme::Dark => "Dark Mode",
-                };
-                if ui.button(theme_label).clicked() {
-                    self.theme = match self.theme {
-                        AppTheme::Light => AppTheme::Dark,
-                        AppTheme::Dark => AppTheme::Light,
-                    };
-                    // Save the theme preference
-                    self.theme.save();
-                }
             });
         });
 
@@ -404,6 +583,7 @@ impl eframe::App for TopologyApp {
                 self.palette_drag_ended,
                 link_mode,
                 link_style,
+                self.settings.snap_to_grid,
             );
 
             // If dragging just started, save the pre-drag state
@@ -414,7 +594,7 @@ impl eframe::App for TopologyApp {
             // Record undo/redo for discrete canvas actions
             if result.node_added || result.node_deleted || result.node_renamed
                 || result.link_added || result.link_deleted {
-                self.undo_redo.execute(crate::commands::Command::new(before_project, self.project.clone()));
+                self.undo_redo.execute(crate::commands::Command::new(before_project.clone(), self.project.clone()));
                 self.unsaved_changes = true;
             }
             // For node moves, record undo only when dragging stops (not every frame)
@@ -422,6 +602,20 @@ impl eframe::App for TopologyApp {
             if was_dragging && self.canvas_interaction.dragging_node.is_none() && result.node_moved_in_drag {
                 if let Some(drag_start) = self.drag_start_project.take() {
                     self.undo_redo.execute(crate::commands::Command::new(drag_start, self.project.clone()));
+                    self.unsaved_changes = true;
+                }
+            }
+            // For node nudges (Ctrl+Arrow), batch into a single undo entry
+            if result.nodes_nudged {
+                // If this is the first nudge frame, save the pre-nudge state
+                if self.nudge_start_project.is_none() {
+                    self.nudge_start_project = Some(before_project.clone());
+                }
+                // Don't record undo yet — wait for the nudge to stop
+            } else if self.nudge_start_project.is_some() {
+                // Nudge just stopped — record a single undo entry for the entire session
+                if let Some(nudge_start) = self.nudge_start_project.take() {
+                    self.undo_redo.execute(crate::commands::Command::new(nudge_start, self.project.clone()));
                     self.unsaved_changes = true;
                 }
             }
@@ -465,6 +659,27 @@ impl eframe::App for TopologyApp {
         // === EXPORT OPTIONS DIALOG ===
         if self.show_export_dialog {
             self.show_export_dialog(ctx);
+        }
+
+        // === SETTINGS DIALOG ===
+        if self.show_settings {
+            self.show_settings_dialog(ctx);
+        }
+
+        // === SAVE CHANGES? DIALOG ===
+        if self.show_save_prompt {
+            self.show_save_prompt_dialog(ctx);
+        }
+
+        // === AUTOSAVE TIMER ===
+        if self.settings.autosave && self.current_file.is_some() && self.unsaved_changes {
+            let dt = ctx.input(|i| i.stable_dt) as f64;
+            self.autosave_timer += dt;
+            // Autosave every 30 seconds
+            if self.autosave_timer >= 30.0 {
+                self.autosave_timer = 0.0;
+                self.save_project();
+            }
         }
     }
 }

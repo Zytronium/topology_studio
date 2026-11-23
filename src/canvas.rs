@@ -1,4 +1,5 @@
 use egui::*;
+use std::collections::HashSet;
 use uuid::Uuid;
 use crate::model::{Node, NodeType, TopologyProject, Link, LinkStyle};
 use crate::icons;
@@ -53,9 +54,12 @@ impl CanvasTransform {
 
 /// Interaction state for the canvas
 pub struct CanvasInteraction {
-    pub selected_node: Option<Uuid>,
+    pub selected_nodes: HashSet<Uuid>,
     pub selected_link: Option<Uuid>,
+    /// The node being dragged (the one the user clicked on). All selected nodes move together.
     pub dragging_node: Option<Uuid>,
+    /// Original world positions of all selected nodes at drag start (for multi-drag)
+    pub drag_offsets: Vec<(Uuid, Pos2)>,
     pub is_panning: bool,
     pub pan_start: Pos2,
     pub pan_offset_start: Pos2,
@@ -74,9 +78,10 @@ pub struct CanvasInteraction {
 impl Default for CanvasInteraction {
     fn default() -> Self {
         Self {
-            selected_node: None,
+            selected_nodes: HashSet::new(),
             selected_link: None,
             dragging_node: None,
+            drag_offsets: Vec::new(),
             is_panning: false,
             pan_start: Pos2::ZERO,
             pan_offset_start: Pos2::ZERO,
@@ -85,6 +90,21 @@ impl Default for CanvasInteraction {
             context_menu_node: None,
             context_menu_pos: Pos2::ZERO,
             context_submenu_open: false,
+        }
+    }
+}
+
+impl CanvasInteraction {
+    /// Get the primary selected node (for backward compatibility)
+    pub fn selected_node(&self) -> Option<Uuid> {
+        self.selected_nodes.iter().next().copied()
+    }
+
+    /// Set a single selected node, clearing others
+    pub fn set_selected_node(&mut self, id: Option<Uuid>) {
+        self.selected_nodes.clear();
+        if let Some(node_id) = id {
+            self.selected_nodes.insert(node_id);
         }
     }
 }
@@ -153,6 +173,8 @@ pub struct CanvasResult {
     pub link_deleted: bool,
     /// Link style requested from context menu (activates link mode in app.rs)
     pub context_link_style: Option<LinkStyle>,
+    /// True if nodes were nudged by keyboard (for undo batching)
+    pub nodes_nudged: bool,
 }
 
 /// Context menu action selected by the user
@@ -173,6 +195,7 @@ pub fn canvas_ui(
     palette_drag_ended: bool,
     link_mode: bool,
     link_style: Option<LinkStyle>,
+    snap_to_grid: bool,
 ) -> CanvasResult {
     let mut result = CanvasResult {
         node_added: false,
@@ -183,6 +206,7 @@ pub fn canvas_ui(
         link_added: false,
         link_deleted: false,
         context_link_style: None,
+        nodes_nudged: false,
     };
 
     let (response, painter) = ui.allocate_painter(ui.available_size(), Sense::click_and_drag());
@@ -215,7 +239,7 @@ pub fn canvas_ui(
     for node in &project.nodes {
         let center = transform.world_to_screen(pos2(node.x as f32, node.y as f32));
         let icon_size = icons::ICON_SIZE * transform.zoom;
-        let selected = interaction.selected_node == Some(node.id);
+        let selected = interaction.selected_nodes.contains(&node.id);
         let editing = interaction.editing_node.as_ref().map(|(id, _)| *id) == Some(node.id);
         icons::draw_node_icon(&painter, node.node_type, center, icon_size, selected || editing, visuals);
 
@@ -495,17 +519,17 @@ pub fn canvas_ui(
             ContextMenuAction::Rename => {
                 if let Some(node) = project.get_node(node_id) {
                     interaction.editing_node = Some((node_id, node.label.clone()));
-                    interaction.selected_node = Some(node_id);
+                    interaction.set_selected_node(Some(node_id));
                 }
             }
             ContextMenuAction::AddLink(style) => {
-                interaction.selected_node = Some(node_id);
+                interaction.set_selected_node(Some(node_id));
                 interaction.link_source = Some(node_id);
                 result.context_link_style = Some(style);
             }
             ContextMenuAction::Delete => {
                 project.remove_node(node_id);
-                interaction.selected_node = None;
+                interaction.selected_nodes.remove(&node_id);
                 interaction.editing_node = None;
                 result.node_deleted = true;
             }
@@ -518,8 +542,15 @@ pub fn canvas_ui(
             if let Some(pointer_pos) = ui.input(|i| i.pointer.hover_pos()) {
                 if rect.contains(pointer_pos) {
                     let world_pos = transform.screen_to_world(pointer_pos);
-                    let node = Node::new(node_type, world_pos.x as f64, world_pos.y as f64);
+                    let (snap_x, snap_y) = if snap_to_grid {
+                        snap_to_grid_pos(world_pos.x as f64, world_pos.y as f64)
+                    } else {
+                        (world_pos.x as f64, world_pos.y as f64)
+                    };
+                    let node = Node::new(node_type, snap_x, snap_y);
+                    let node_id = node.id;
                     project.add_node(node);
+                    interaction.set_selected_node(Some(node_id));
                     result.node_added = true;
                 }
             }
@@ -553,7 +584,7 @@ pub fn canvas_ui(
             if let Some(node_id) = CanvasInteraction::hit_test_node(project, world_pos, transform) {
                 interaction.context_menu_node = Some(node_id);
                 interaction.context_menu_pos = pointer_pos;
-                interaction.selected_node = Some(node_id);
+                interaction.set_selected_node(Some(node_id));
             } else {
                 interaction.context_menu_node = None;
             }
@@ -561,6 +592,7 @@ pub fn canvas_ui(
 
         // Primary button clicked (edge-triggered, fires once per click)
         if input.primary_clicked() {
+            let ctrl_held = ui.input(|i| i.modifiers.ctrl);
             // Check if we're on a node
             if let Some(node_id) = CanvasInteraction::hit_test_node(project, transform.screen_to_world(pointer_pos), transform) {
                 if link_mode {
@@ -568,7 +600,7 @@ pub fn canvas_ui(
                     if interaction.link_source.is_none() {
                         // First click: set source
                         interaction.link_source = Some(node_id);
-                        interaction.selected_node = Some(node_id);
+                        interaction.set_selected_node(Some(node_id));
                     } else if interaction.link_source != Some(node_id) {
                         // Second click: create link
                         let source_id = interaction.link_source.unwrap();
@@ -594,13 +626,21 @@ pub fn canvas_ui(
                     // Double-click: start editing the node's label
                     if let Some(node) = project.get_node(node_id) {
                         interaction.editing_node = Some((node_id, node.label.clone()));
-                        interaction.selected_node = Some(node_id);
+                        interaction.set_selected_node(Some(node_id));
                         interaction.selected_link = None;
                         interaction.dragging_node = None;
                     }
+                } else if ctrl_held {
+                    // Ctrl+click: toggle this node in the selection set
+                    if interaction.selected_nodes.contains(&node_id) {
+                        interaction.selected_nodes.remove(&node_id);
+                    } else {
+                        interaction.selected_nodes.insert(node_id);
+                    }
+                    interaction.selected_link = None;
                 } else {
-                    // Single click: select the node; drag will start after a delay
-                    interaction.selected_node = Some(node_id);
+                    // Single click: select only this node
+                    interaction.set_selected_node(Some(node_id));
                     interaction.selected_link = None;
                     // Don't start dragging yet — wait for drag delta to confirm it's not a double-click
                 }
@@ -617,20 +657,25 @@ pub fn canvas_ui(
                         interaction.selected_link = None;
                     } else {
                         interaction.selected_link = Some(link_id);
-                        interaction.selected_node = None;
+                        interaction.selected_nodes.clear();
                     }
                 } else {
-                    interaction.selected_node = None;
+                    interaction.selected_nodes.clear();
                     interaction.selected_link = None;
                     interaction.editing_node = None;
 
                     // Place node from palette selection (single click placement)
                     if let Some(node_type) = palette_selected_type {
                         let world_pos = transform.screen_to_world(pointer_pos);
-                        let node = Node::new(node_type, world_pos.x as f64, world_pos.y as f64);
+                        let (snap_x, snap_y) = if snap_to_grid {
+                            snap_to_grid_pos(world_pos.x as f64, world_pos.y as f64)
+                        } else {
+                            (world_pos.x as f64, world_pos.y as f64)
+                        };
+                        let node = Node::new(node_type, snap_x, snap_y);
                         let node_id = node.id;
                         project.add_node(node);
-                        interaction.selected_node = Some(node_id);
+                        interaction.set_selected_node(Some(node_id));
                         result.node_added = true;
                     }
                 }
@@ -650,8 +695,18 @@ pub fn canvas_ui(
                     if interaction.dragging_node.is_none() {
                         let world_pos = transform.screen_to_world(pointer_pos);
                         if let Some(node_id) = CanvasInteraction::hit_test_node(project, world_pos, transform) {
-                            // Dragging a node — select it and start dragging
-                            interaction.selected_node = Some(node_id);
+                            // If clicking a node that's not in the selection, select it alone
+                            if !interaction.selected_nodes.contains(&node_id) {
+                                interaction.set_selected_node(Some(node_id));
+                            }
+                            // Record original positions of ALL selected nodes for multi-drag
+                            interaction.drag_offsets = interaction.selected_nodes.iter().map(|id| {
+                                if let Some(n) = project.get_node(*id) {
+                                    (*id, pos2(n.x as f32, n.y as f32))
+                                } else {
+                                    (*id, Pos2::ZERO)
+                                }
+                            }).collect();
                             interaction.dragging_node = Some(node_id);
                         } else {
                             // Dragging on empty space - start panning
@@ -676,16 +731,34 @@ pub fn canvas_ui(
     }
 
     // --- DRAG NODE: works even when pointer leaves canvas ---
-    // Run BEFORE clearing dragging_node so the last drag position is recorded
-    if let Some(dragging_id) = interaction.dragging_node {
+    // Move ALL selected nodes together, not just the one clicked
+    if let Some(_dragging_id) = interaction.dragging_node {
         if let Some(global_pos) = global_pointer {
             let world_pos = transform.screen_to_world(global_pos);
-            if let Some(node) = project.get_node_mut(dragging_id) {
-                node.x = world_pos.x as f64;
-                node.y = world_pos.y as f64;
-                result.node_moved = true;
-                result.node_moved_in_drag = true;
+            // Calculate the delta from the dragged node's original position
+            let dragged_node_id = _dragging_id;
+            let original_pos = interaction.drag_offsets.iter()
+                .find(|(id, _)| *id == dragged_node_id)
+                .map(|(_, p)| *p)
+                .unwrap_or(world_pos);
+            let delta = world_pos - original_pos;
+
+            // Move all selected nodes by the same delta
+            for (node_id, orig_pos) in &interaction.drag_offsets {
+                if let Some(node) = project.get_node_mut(*node_id) {
+                    let new_x = orig_pos.x + delta.x;
+                    let new_y = orig_pos.y + delta.y;
+                    let (x, y) = if snap_to_grid {
+                        snap_to_grid_pos(new_x as f64, new_y as f64)
+                    } else {
+                        (new_x as f64, new_y as f64)
+                    };
+                    node.x = x;
+                    node.y = y;
+                }
             }
+            result.node_moved = true;
+            result.node_moved_in_drag = true;
         }
     }
 
@@ -701,6 +774,7 @@ pub fn canvas_ui(
     // This must come AFTER the drag block so the drag block runs one last time
     if input.primary_released() {
         interaction.dragging_node = None;
+        interaction.drag_offsets.clear();
         interaction.is_panning = false;
     }
     if input.button_released(egui::PointerButton::Middle) {
@@ -718,7 +792,7 @@ pub fn canvas_ui(
         transform.offset = mouse_pos - (mouse_pos - transform.offset) * actual_factor;
     }
 
-    // Handle keyboard - Delete selected node or link
+    // Handle keyboard - Delete selected node(s) or link
     if ui.input(|i| i.key_pressed(egui::Key::Delete)) {
         if link_mode {
             // Exit link mode on Delete
@@ -727,9 +801,13 @@ pub fn canvas_ui(
             project.remove_link(link_id);
             interaction.selected_link = None;
             result.link_deleted = true;
-        } else if let Some(node_id) = interaction.selected_node {
-            project.remove_node(node_id);
-            interaction.selected_node = None;
+        } else if !interaction.selected_nodes.is_empty() {
+            // Delete all selected nodes
+            let ids_to_remove: Vec<Uuid> = interaction.selected_nodes.iter().copied().collect();
+            for node_id in &ids_to_remove {
+                project.remove_node(*node_id);
+            }
+            interaction.selected_nodes.clear();
             interaction.editing_node = None;
             result.node_deleted = true;
         }
@@ -740,8 +818,43 @@ pub fn canvas_ui(
         if link_mode {
             interaction.link_source = None;
         } else {
-            interaction.selected_node = None;
+            interaction.selected_nodes.clear();
             interaction.selected_link = None;
+        }
+    }
+
+    // Handle keyboard - Arrow keys for panning and Ctrl+Arrow for nudging
+    let dt = ui.input(|i| i.stable_dt);
+    let pan_speed = 200.0 * dt; // pixels per second
+    let ctrl_held_kb = ui.input(|i| i.modifiers.ctrl);
+    let shift_held_kb = ui.input(|i| i.modifiers.shift);
+    let nudge_amount = if shift_held_kb { 10.0 } else { 1.0 };
+
+    // Check arrow key states
+    let arrow_left = ui.input(|i| i.key_down(egui::Key::ArrowLeft));
+    let arrow_right = ui.input(|i| i.key_down(egui::Key::ArrowRight));
+    let arrow_up = ui.input(|i| i.key_down(egui::Key::ArrowUp));
+    let arrow_down = ui.input(|i| i.key_down(egui::Key::ArrowDown));
+
+    if ctrl_held_kb && !interaction.selected_nodes.is_empty() {
+        // Ctrl+Arrow: nudge selected nodes
+        if arrow_left || arrow_right || arrow_up || arrow_down {
+            let dx = if arrow_right { nudge_amount } else if arrow_left { -nudge_amount } else { 0.0 };
+            let dy = if arrow_down { nudge_amount } else if arrow_up { -nudge_amount } else { 0.0 };
+            for node_id in &interaction.selected_nodes {
+                if let Some(node) = project.get_node_mut(*node_id) {
+                    node.x += dx;
+                    node.y += dy;
+                }
+            }
+            result.nodes_nudged = true;
+        }
+    } else if !ctrl_held_kb {
+        // Arrow keys without Ctrl: pan the canvas
+        if arrow_left || arrow_right || arrow_up || arrow_down {
+            let pan_dx = if arrow_right { pan_speed } else if arrow_left { -pan_speed } else { 0.0 };
+            let pan_dy = if arrow_down { pan_speed } else if arrow_up { -pan_speed } else { 0.0 };
+            transform.offset = transform.offset + vec2(pan_dx, pan_dy);
         }
     }
 
@@ -942,6 +1055,61 @@ fn node_edge_point(node: &Node, center: Pos2, toward: Pos2) -> Pos2 {
         center
     } else {
         center + direction.normalized() * t
+    }
+}
+
+/// Snap a world position to the nearest grid intersection.
+/// Grid spacing is 20 pixels.
+fn snap_to_grid_pos(x: f64, y: f64) -> (f64, f64) {
+    let grid = 20.0;
+    let sx = (x / grid).round() * grid;
+    let sy = (y / grid).round() * grid;
+    (sx, sy)
+}
+
+impl CanvasTransform {
+    /// Reset zoom to 100% and center the view on (0,0).
+    pub fn reset_zoom(&mut self) {
+        self.zoom = 1.0;
+        let v: Vec2 = self.canvas_rect.center().to_vec2() - self.canvas_rect.min.to_vec2();
+        self.offset = Pos2::new(v.x, v.y);
+    }
+
+    /// Zoom to fit all nodes with the given padding.
+    pub fn zoom_to_fit(&mut self, project: &TopologyProject, padding: f32) {
+        if project.nodes.is_empty() {
+            self.reset_zoom();
+            return;
+        }
+
+        let mut min_x = f64::MAX;
+        let mut min_y = f64::MAX;
+        let mut max_x = f64::MIN;
+        let mut max_y = f64::MIN;
+
+        for node in &project.nodes {
+            let (w, h) = node.size();
+            min_x = min_x.min(node.x - w / 2.0);
+            min_y = min_y.min(node.y - h / 2.0);
+            max_x = max_x.max(node.x + w / 2.0);
+            max_y = max_y.max(node.y + h / 2.0);
+        }
+
+        let content_w = (max_x - min_x) as f32 + padding * 2.0;
+        let content_h = (max_y - min_y) as f32 + padding * 2.0;
+        let canvas_w = self.canvas_rect.width();
+        let canvas_h = self.canvas_rect.height();
+
+        let zoom_x = canvas_w / content_w;
+        let zoom_y = canvas_h / content_h;
+        self.zoom = (zoom_x.min(zoom_y)).clamp(Self::MIN_ZOOM, Self::MAX_ZOOM);
+
+        let center_x = ((min_x + max_x) / 2.0) as f32;
+        let center_y = ((min_y + max_y) / 2.0) as f32;
+        let screen_center = self.canvas_rect.center();
+        // offset + canvas_rect.min = screen_center - center * zoom
+        let v: Vec2 = screen_center.to_vec2() - self.canvas_rect.min.to_vec2() - vec2(center_x, center_y) * self.zoom;
+        self.offset = Pos2::new(v.x, v.y);
     }
 }
 
