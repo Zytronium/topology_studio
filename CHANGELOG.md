@@ -3,18 +3,8 @@
 ## [1.0.1](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.1) (2026-11-23)
 
 
-### Features
-
-* AAAAAAAAAAAAAAAAAAAAAAAAA ([f382f7d](https://github.com/Zytronium/topology_studio/commit/f382f7d8a0a116d31547ec40ac4e3ecffd903294))
-* AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ([45e5171](https://github.com/Zytronium/topology_studio/commit/45e5171478fdd60cf4fafd9a5546397feed06970))
-* AAAAAAAAAAAAAAAIAHATEARELEASEAPLEASEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ([319c918](https://github.com/Zytronium/topology_studio/commit/319c918ca898f27378b5b59e86becd906232aa20))
-* AAAAAAAAAAAAAAAIAHATEARELEASEAPLEASEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA ([89509f1](https://github.com/Zytronium/topology_studio/commit/89509f15dfac85cda0140dc31326662fa9980e96))
-* do I even have to tell you this is still not a feature? ([2ec1076](https://github.com/Zytronium/topology_studio/commit/2ec1076e541d89ad2507d2186338c387d7429324))
-
-
 ### Bug Fixes
 
-* incorrect version code (1.1.0 instead of 1.0.1) ([60f22c5](https://github.com/Zytronium/topology_studio/commit/60f22c58b2c793a6b1a97cfd9ea06cba26c8cc52))
 * remove terminal window from Windows version ([c04d292](https://github.com/Zytronium/topology_studio/commit/c04d292037776f11d87c85b52dc7a3892b5a5bc2))
 
 ## [1.0.0](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.0) (2026-11-23)
