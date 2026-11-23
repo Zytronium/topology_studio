@@ -666,7 +666,7 @@ impl eframe::App for TopologyApp {
             self.show_settings_dialog(ctx);
         }
 
-        // === SAVE CHANGES? DIALOG ===
+        // === SAVE CHANGES DIALOG ===
         if self.show_save_prompt {
             self.show_save_prompt_dialog(ctx);
         }
