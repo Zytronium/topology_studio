@@ -95,11 +95,6 @@ impl Default for CanvasInteraction {
 }
 
 impl CanvasInteraction {
-    /// Get the primary selected node (for backward compatibility)
-    pub fn selected_node(&self) -> Option<Uuid> {
-        self.selected_nodes.iter().next().copied()
-    }
-
     /// Set a single selected node, clearing others
     pub fn set_selected_node(&mut self, id: Option<Uuid>) {
         self.selected_nodes.clear();
@@ -279,10 +274,10 @@ pub fn canvas_ui(
                 .constrain(false)
                 .fixed_pos(text_field_rect.min)
                 .show(&ctx, |ui| {
-                    let frame = egui::Frame::none()
+                    let frame = egui::Frame::NONE
                         .fill(visuals.extreme_bg_color)
-                        .stroke(Stroke::new(1.5, visuals.selection.stroke.color))
-                        .rounding(3.0);
+                        .stroke(Stroke::new(1.5_f32, visuals.selection.stroke.color))
+                        .corner_radius(3.0);
                     frame.show(ui, |ui| {
                         ui.add_space(1.0);
                         let response = ui.add(
@@ -374,10 +369,10 @@ pub fn canvas_ui(
             .constrain(true)
             .fixed_pos(menu_pos)
             .show(&ctx, |ui| {
-                let frame = egui::Frame::none()
+                let frame = egui::Frame::NONE
                     .fill(menu_bg)
-                    .stroke(Stroke::new(1.0, menu_text))
-                    .rounding(4.0)
+                    .stroke(Stroke::new(1.0_f32, menu_text))
+                    .corner_radius(4.0)
                     .inner_margin(2.0);
                 frame.show(ui, |ui| {
                     // Helper: create a transparent menu item that fits its text
@@ -424,7 +419,7 @@ pub fn canvas_ui(
                                 pos2(chevron_x, chevron_y),
                                 pos2(chevron_x - size, chevron_y + size),
                             ],
-                            Stroke::new(1.0, menu_text),
+                            Stroke::new(1.0_f32, menu_text),
                         );
                     }
 
@@ -442,10 +437,10 @@ pub fn canvas_ui(
                             .constrain(true)
                             .fixed_pos(submenu_pos)
                             .show(&ctx, |ui| {
-                                let frame2 = egui::Frame::none()
+                                let frame2 = egui::Frame::NONE
                                     .fill(menu_bg)
-                                    .stroke(Stroke::new(1.0, menu_text))
-                                    .rounding(4.0)
+                                    .stroke(Stroke::new(1.0_f32, menu_text))
+                                    .corner_radius(4.0)
                                     .inner_margin(2.0);
                                 frame2.show(ui, |ui| {
                                     let (eth_rect, eth_clicked, eth_hovered) = menu_item(ui, "Ethernet", 0.0);
@@ -933,7 +928,7 @@ fn draw_links(
             
             let is_selected = interaction.selected_link == Some(link.id);
             let stroke_color = if is_selected { selected_link_color } else { link_color };
-            let stroke_width = if is_selected { 2.5 } else { 1.5 };
+            let stroke_width = if is_selected { 2.5_f32 } else { 1.5_f32 };
             
             match link.style {
                 LinkStyle::Solid => {
@@ -997,7 +992,7 @@ fn draw_links(
                     
                     painter.line_segment(
                         [src_screen, pointer_pos],
-                        Stroke::new(1.5, Color32::from_rgba_unmultiplied(100, 150, 255, 180)),
+                        Stroke::new(1.5_f32, Color32::from_rgba_unmultiplied(100, 150, 255, 180)),
                     );
                 }
             }
@@ -1126,7 +1121,7 @@ fn draw_grid(painter: &egui::Painter, rect: Rect, transform: &CanvasTransform, b
 
     let grid_spacing = 40.0 * transform.zoom;
     if grid_spacing > 5.0 {
-        let grid_stroke = Stroke::new(1.0, grid_color);
+        let grid_stroke = Stroke::new(1.0_f32, grid_color);
 
         let world_min = transform.screen_to_world(rect.min);
         let world_max = transform.screen_to_world(rect.max);

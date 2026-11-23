@@ -128,10 +128,6 @@ impl TopologyProject {
         self.links.retain(|l| l.id != id);
     }
 
-    /// Remove all links connected to a node
-    pub fn remove_links_for_node(&mut self, node_id: Uuid) {
-        self.links.retain(|l| l.source != node_id && l.target != node_id);
-    }
 }
 
 #[cfg(test)]

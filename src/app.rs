@@ -10,7 +10,7 @@ use crate::export::{self, ExportOptions};
 
 /// Action pending after the user confirms they want to discard or save changes.
 #[derive(Clone, Copy)]
-enum PendingAction {
+pub(crate) enum PendingAction {
     New,
     Open,
     Close,
@@ -452,7 +452,7 @@ impl eframe::App for TopologyApp {
         // Track when the project is modified so we can show * in the title
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New").clicked() {
                         if !self.prompt_save_if_needed(PendingAction::New) {
@@ -650,7 +650,7 @@ impl eframe::App for TopologyApp {
                 let painter = ctx.layer_painter(layer_id);
                 let preview_size = icons::ICON_SIZE;
                 painter.circle_filled(pointer_pos, preview_size / 2.0, Color32::from_rgba_unmultiplied(255, 255, 255, 80));
-                painter.circle_stroke(pointer_pos, preview_size / 2.0, Stroke::new(2.0, Color32::from_rgba_unmultiplied(100, 150, 255, 180)));
+                painter.circle_stroke(pointer_pos, preview_size / 2.0, Stroke::new(2.0_f32, Color32::from_rgba_unmultiplied(100, 150, 255, 180)));
                 let visuals = ctx.style().visuals.clone();
                 icons::draw_node_icon_preview(&painter, drag_node_type, pointer_pos, preview_size, &visuals);
             }

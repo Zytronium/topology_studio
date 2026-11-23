@@ -121,7 +121,7 @@ pub fn links_ui(ui: &mut Ui, selected_style: &mut Option<LinkStyle>) {
     let line_len = 20.0;
     ui.painter().line_segment(
         [pos2(icon_x - line_len / 2.0, icon_y), pos2(icon_x + line_len / 2.0, icon_y)],
-        Stroke::new(2.5, eth_color),
+        Stroke::new(2.5_f32, eth_color),
     );
 
     let label_x = row_rect.min.x + 16.0 + 16.0 + 4.0;
@@ -156,14 +156,13 @@ pub fn links_ui(ui: &mut Ui, selected_style: &mut Option<LinkStyle>) {
     // Draw dashed line icon
     let icon_x = row_rect.min.x + 16.0;
     let icon_y = row_rect.center().y;
-    let dash_len = 6.0;
     ui.painter().line_segment(
         [pos2(icon_x - 10.0, icon_y), pos2(icon_x - 4.0, icon_y)],
-        Stroke::new(2.5, wl_color),
+        Stroke::new(2.5_f32, wl_color),
     );
     ui.painter().line_segment(
         [pos2(icon_x + 2.0, icon_y), pos2(icon_x + 8.0, icon_y)],
-        Stroke::new(2.5, wl_color),
+        Stroke::new(2.5_f32, wl_color),
     );
 
     let label_x = row_rect.min.x + 16.0 + 16.0 + 4.0;

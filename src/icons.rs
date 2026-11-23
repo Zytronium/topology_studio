@@ -252,7 +252,7 @@ pub fn draw_node_icon(painter: &egui::Painter, node_type: NodeType, center: Pos2
         let c = if is_dark { 120u8 } else { 100u8 };
         Color32::from_rgb(c, c, c)
     };
-    let stroke = Stroke::new(if selected { 2.0 } else { 1.5 }, stroke_color);
+    let stroke = Stroke::new(if selected { 2.0_f32 } else { 1.5_f32 }, stroke_color);
 
     let rect = Rect::from_center_size(center, vec2(size, size));
     painter.rect_filled(rect, 4.0, bg);
@@ -277,12 +277,12 @@ pub fn draw_node_icon(painter: &egui::Painter, node_type: NodeType, center: Pos2
 }
 
 /// Draw a semi-transparent preview of a node icon (for palette drag preview)
-pub fn draw_node_icon_preview(painter: &egui::Painter, node_type: NodeType, center: Pos2, size: f32, visuals: &Visuals) {
+pub fn draw_node_icon_preview(painter: &egui::Painter, node_type: NodeType, center: Pos2, size: f32, _visuals: &Visuals) {
     // Semi-transparent background
     let bg = Color32::from_rgba_unmultiplied(200, 200, 220, 100);
     let rect = Rect::from_center_size(center, vec2(size, size));
     painter.rect_filled(rect, 4.0, bg);
-    painter.rect_stroke(rect, 4.0, Stroke::new(1.5, Color32::from_rgba_unmultiplied(100, 150, 255, 180)), StrokeKind::Outside);
+    painter.rect_stroke(rect, 4.0, Stroke::new(1.5_f32, Color32::from_rgba_unmultiplied(100, 150, 255, 180)), StrokeKind::Outside);
 
     // Draw the SVG icon — use dark mode texture for preview (always visible)
     let ctx = painter.ctx().clone();
