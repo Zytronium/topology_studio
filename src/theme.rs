@@ -40,9 +40,26 @@ impl ThemeMode {
 }
 
 /// Detect the system theme preference.
-/// On Linux, checks the XDG desktop preferences or falls back to light mode.
+/// On Linux, checks GNOME/KDE settings. On Windows, reads the registry.
+/// Falls back to light mode if nothing can be detected.
 fn detect_system_theme() -> AppTheme {
-    // Try to read from XDG settings (GNOME/KDE)
+    // Windows: check the AppsUseLightTheme registry key
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(value) = winreg::RegKey::current_user()
+            .open_subkey(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        {
+            if let Ok(apps_light) = value.get_value::<u32, _>("AppsUseLightTheme") {
+                return if apps_light == 0 {
+                    AppTheme::Dark
+                } else {
+                    AppTheme::Light
+                };
+            }
+        }
+    }
+
+    // Linux: Try to read from XDG settings (GNOME/KDE)
     // Check gsettings for GNOME
     if let Ok(output) = std::process::Command::new("gsettings")
         .args(&["get", "org.gnome.desktop.interface", "color-scheme"])

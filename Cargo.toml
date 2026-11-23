@@ -11,3 +11,6 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 rfd = "0.14"
 resvg = "0.45"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"
