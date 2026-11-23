@@ -21,10 +21,13 @@ permissions:
 
 env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag_name || github.event.inputs.tag_name }}
+  APP_NAME: "Topology Studio"
 
 jobs:
+  # ==================== LINUX PACKAGES ====================
+
   build-linux:
-    name: Build Linux
+    name: Build Linux Binary
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -59,16 +62,224 @@ jobs:
       - name: Build release
         run: cargo build --release
 
-      - name: Upload release assets
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release/topology_studio
+
+  build-appimage:
+    name: Build AppImage
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release
+
+      - name: Make binary executable
+        run: chmod +x target/release/topology_studio
+
+      - name: Build AppImage
+        uses: AppImageCrafters/build-appimage@v1
+        with:
+          recipe: AppImageBuilder.yml
+
+      - name: Upload AppImage
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: |
-            target/release/topology_studio
-            assets/topology_studio.desktop
+          files: Topology Studio-x86_64.AppImage
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-deb-rpm:
+    name: Build DEB and RPM
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release
+
+      - name: Install fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby-dev build-essential
+          gem install fpm
+
+      - name: Create package directory
+        run: |
+          mkdir -p package/usr/bin
+          mkdir -p package/usr/share/icons/hicolor/512x512/apps
+          mkdir -p package/usr/share/applications
+          cp target/release/topology_studio package/usr/bin/
+          cp assets/icon.svg package/usr/share/icons/hicolor/512x512/apps/topology_studio.svg
+          cat > package/usr/share/applications/topology_studio.desktop << 'EOF'
+          [Desktop Entry]
+          Name=Topology Studio
+          Comment=Network Topology Studio
+          Exec=topology_studio
+          Icon=topology_studio
+          Terminal=false
+          Type=Application
+          Categories=Development;
+          EOF
+
+      - name: Build DEB package
+        run: |
+          fpm -s dir -t deb \
+            -n topology_studio \
+            --version ${RELEASE_TAG#v} \
+            --vendor "Zytronium" \
+            --url "https://github.com/Zytronium/topology_studio" \
+            --description "Network Topology Studio" \
+            --category Development \
+            --license MIT \
+            --icon assets/icon.svg \
+            -C package \
+            .
+
+      - name: Build RPM package
+        run: |
+          fpm -s dir -t rpm \
+            -n topology_studio \
+            --version ${RELEASE_TAG#v} \
+            --vendor "Zytronium" \
+            --url "https://github.com/Zytronium/topology_studio" \
+            --description "Network Topology Studio" \
+            --category Development \
+            --license MIT \
+            --icon assets/icon.svg \
+            -C package \
+            .
+
+      - name: Upload DEB package
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: topology_studio_${RELEASE_TAG#v}_amd64.deb
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload RPM package
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: topology_studio-${RELEASE_TAG#v}-1.x86_64.rpm
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-flatpak:
+    name: Build Flatpak
+    runs-on: ubuntu-latest
+    needs: build-linux
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: target/release
+
+      - name: Install Flatpak builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Install Flatpak runtime
+        run: |
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.gnome.Runtime//46 org.gnome.Sdk//46
+
+      - name: Create Flatpak manifest
+        run: |
+          VERSION=${RELEASE_TAG#v}
+          cat > com.topology_studio.app.yml << EOF
+          {
+            "id": "com.topology_studio.app",
+            "runtime": "org.gnome.Runtime",
+            "runtime-version": "46",
+            "sdk": "org.gnome.Sdk",
+            "command": "topology_studio",
+            "finish-args": [
+              "--share=ipc",
+              "--share=network",
+              "--socket=fallback-x11",
+              "--socket=wayland",
+              "--device=dri"
+            ],
+            "modules": [
+              {
+                "name": "topology_studio",
+                "buildsystem": "simple",
+                "build-commands": [
+                  "install -Dm755 topology_studio /app/bin/topology_studio",
+                  "install -Dm644 icon.svg /app/share/icons/hicolor/512x512/apps/topology_studio.svg",
+                  "install -Dm644 topology_studio.desktop /app/share/applications/topology_studio.desktop"
+                ],
+                "sources": [
+                  {
+                    "type": "file",
+                    "path": "target/release/topology_studio"
+                  },
+                  {
+                    "type": "file",
+                    "path": "assets/icon.svg"
+                  },
+                  {
+                    "type": "inline",
+                    "contents": "[Desktop Entry]
+          Name=Topology Studio
+          Comment=Network Topology Studio
+          Exec=topology_studio
+          Icon=topology_studio
+          Terminal=false
+          Type=Application
+          Categories=Development;
+          ",
+                    "dest": "topology_studio.desktop"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --force-clean flatpak-build com.topology_studio.app.yml
+          flatpak-builder --run flatpak-build com.topology_studio.app.yml topology_studio --version || true
+
+      - name: Export Flatpak
+        run: |
+          flatpak build-bundle --runtime-repo=flathub flatpak-build com.topology_studio.app "Topology Studio-${RELEASE_TAG#v}.flatpak" org.gnome.Runtime//46
+
+      - name: Upload Flatpak
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: "Topology Studio-${RELEASE_TAG#v}.flatpak"
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==================== WINDOWS PACKAGES ====================
 
   build-windows:
     name: Build Windows
@@ -98,28 +309,109 @@ jobs:
           path: target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install ImageMagick
-        run: |
-          choco install imagemagick -y
-
-      - name: Convert SVG icon to ICO
-        run: |
-          # Use pre-generated icon.ico if available, otherwise convert from SVG
-          if (-not (Test-Path assets/icon.ico)) {
-            magick convert assets/icon.svg -define icon:auto-resize assets/icon.ico
-          }
-
       - name: Build release
         run: cargo build --release
 
-      - name: Upload release asset
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: target/release/topology_studio.exe
+
+  build-windows-exe:
+    name: Build Windows EXE Installer
+    runs-on: windows-latest
+    needs: build-windows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: target/release
+
+      - name: Build Inno Setup installer
+        uses: Minionguyjpro/Inno-Setup-Action@v1.3.0
+        with:
+          path: installer/setup.iss
+          options: /DVersion=${{ github.event.release.tag_name || inputs.tag_name || github.event.inputs.tag_name }}
+
+      - name: Upload EXE installer
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: target/release/topology_studio.exe
+          files: output/TopologyStudio-*-setup.exe
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows-msi:
+    name: Build Windows MSI Installer
+    runs-on: windows-latest
+    needs: build-windows
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: target/release
+
+      - name: Install WiX Toolset
+        run: choco install wixtoolset -y
+
+      - name: Create WiX project
+        run: |
+          $version = "${{ env.RELEASE_TAG }}".TrimStart('v')
+          New-Item -ItemType Directory -Path wix -Force
+          @'
+          <?xml version="1.0" encoding="utf-8"?>
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+            <Package Name="Topology Studio" Language="1033" Version="$version" Manufacturer="Zytronium" UpgradeCode="A1B2C3D4-E5F6-7890-ABCD-EF1234567890">
+              <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version is already installed." />
+              <MediaTemplate />
+              <Feature Id="ProductFeature" Title="Topology Studio" Level="1">
+                <ComponentRef Id="ApplicationComponent" />
+                <ComponentRef Id="ShortcutComponent" />
+              </Feature>
+              <StandardDirectory Id="ProgramFiles64Folder">
+                <Directory Id="INSTALLDIR" Name="Topology Studio">
+                  <Component Id="ApplicationComponent" Guid="{B2C3D4E5-F678-90AB-CDEF-1234567890AB}">
+                    <File Source="target\release\topology_studio.exe" KeyPath="yes" />
+                  </Component>
+                </Directory>
+              </StandardDirectory>
+              <StandardDirectory Id="ProgramMenuFolder">
+                <Component Id="ShortcutComponent" Guid="{C3D4E5F6-7890-ABCD-EF12-34567890ABCD}">
+                  <Shortcut Id="ApplicationShortcut" Name="Topology Studio" Target="[INSTALLDIR]topology_studio.exe" WorkingDirectory="INSTALLDIR" />
+                  <RemoveFolder Id="CleanupProgramMenu" Directory="ProgramMenuFolder" On="uninstall" />
+                  <RegistryValue Root="HKCU" Key="Software\Zytronium\Topology Studio" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                </Component>
+              </StandardDirectory>
+            </Package>
+          </Wix>
+          '@ | Out-File -FilePath wix\Product.wxs -Encoding utf8
+
+      - name: Build MSI
+        run: |
+          $version = "${{ env.RELEASE_TAG }}".TrimStart('v')
+          candle wix\Product.wxs -out wix\Product.wixobj
+          light wix\Product.wixobj -out "TopologyStudio-$version.msi"
+
+      - name: Upload MSI installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: TopologyStudio-*.msi
+          name: "Topology Studio ${{ env.RELEASE_TAG }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==================== MACOS PACKAGES ====================
 
   build-macos:
     name: Build macOS
@@ -181,18 +473,19 @@ jobs:
 
       - name: Create .app bundle
         run: |
-          APP_NAME="Network Topology Studio.app"
+          APP_NAME="Topology Studio.app"
           mkdir -p "$APP_NAME/Contents/MacOS"
           mkdir -p "$APP_NAME/Contents/Resources"
           cp target/topology_studio "$APP_NAME/Contents/MacOS/"
           cp assets/icon.icns "$APP_NAME/Contents/Resources/"
-          cat > "$APP_NAME/Contents/Info.plist" << 'EOF'
+          VERSION="${RELEASE_TAG#v}"
+          cat > "$APP_NAME/Contents/Info.plist" << EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>CFBundleName</key>
-              <string>Network Topology Studio</string>
+              <string>Topology Studio</string>
               <key>CFBundleExecutable</key>
               <string>topology_studio</string>
               <key>CFBundleIconFile</key>
@@ -200,9 +493,9 @@ jobs:
               <key>CFBundleIdentifier</key>
               <string>com.topology-studio.app</string>
               <key>CFBundleVersion</key>
-              <string>1</string>
+              <string>$VERSION</string>
               <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
+              <string>$VERSION</string>
               <key>CFBundlePackageType</key>
               <string>APPL</string>
               <key>NSHighResolutionCapable</key>
@@ -212,13 +505,19 @@ jobs:
           </dict>
           </plist>
           EOF
-          zip -r "Network Topology Studio.app.zip" "$APP_NAME"
 
-      - name: Upload release asset
+      - name: Create DMG
+        id: create-dmg
+        uses: L-Super/create-dmg-actions@v1
+        with:
+          dmg_name: "Topology Studio"
+          src_dir: "Topology Studio.app"
+
+      - name: Upload DMG
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: "Network Topology Studio.app.zip"
+          files: ${{ steps.create-dmg.outputs.dmg_path }}
           name: "Topology Studio ${{ env.RELEASE_TAG }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,0 @@
-[Desktop Entry]
-Name=Topology Studio
-Comment=Network Topology Studio
-Exec=topology_studio
-Icon=topology_studio
-Terminal=false
-Type=Application
-Categories=Development;
