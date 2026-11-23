@@ -1,36 +1,40 @@
 # appimage-builder recipe see https://appimage-builder.readthedocs.io for details
 version: 1
 
-appimage:
-  AppDir:
-    apt:
-      arch:
-        - amd64
-      sources:
-        - sourceline: deb http://archive.ubuntu.com/ubuntu/ jammy main restricted
-      include:
-        - libgtk-3-0
-        - libasound2
-        - libx11-6
-        - libxi6
-        - libxrandr2
-        - libxcursor1
-        - libgl1
-    filesets:
-      - root: ../target/release
-        dest: usr/bin
-        files:
-          - topology_studio
-      - root: ../assets
-        dest: usr/share/icons/hicolor/512x512/apps
-        files:
-          - icon.svg
-    desktop-file:
-      name: Topology Studio
+AppDir:
+  path: AppDir
+  apt:
+    arch:
+      - amd64
+    sources:
+      - sourceline: deb http://archive.ubuntu.com/ubuntu/ jammy main restricted
+    include:
+      - libgtk-3-0
+      - libasound2
+      - libx11-6
+      - libxi6
+      - libxrandr2
+      - libxcursor1
+      - libgl1
+  appinfo:
+    id: com.topology_studio.app
+    name: Topology Studio
+    icon: icon
+    exec: topology_studio
+    terminal: false
+    categories: Development;
+  filesets:
+    - root: target/release
+      files:
+        - topology_studio
+  desktopFiles:
+    - path: topology_studio.desktop
       exec: topology_studio
       icon: icon
+      name: Topology Studio
       terminal: false
-      type: Application
       categories: Development;
-  AppImage:
-    arch: x86_64
+
+AppImage:
+  arch: x86_64
+  update-information: none
