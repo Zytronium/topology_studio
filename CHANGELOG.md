@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.1.0) (2026-11-23)
+
+
+### Features
+
+* this is also not a feature ([bf853f7](https://github.com/Zytronium/topology_studio/commit/bf853f79a011902cc0c0f414051001a107cd7583))
+* this is not a feature ([9f2795b](https://github.com/Zytronium/topology_studio/commit/9f2795b10a1c22747e138eaf39264124578ea005))
+
 ## [1.0.0](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.0) (2026-11-23)
 
 
