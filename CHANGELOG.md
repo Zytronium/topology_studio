@@ -6,6 +6,14 @@
 ### Bug Fixes
 
 * build errors ([bd00b49](https://github.com/Zytronium/topology_studio/commit/bd00b49149bfd1476e6aff3bf8aa6aa5874209ff))
+* more build errors ([3f498ad](https://github.com/Zytronium/topology_studio/commit/3f498ad599e004fcee70e60ba3ebb8c243b040a5))
+
+## [1.0.1](https://github.com/Zytronium/topology_studio/compare/v1.0.1...v1.0.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* build errors ([bd00b49](https://github.com/Zytronium/topology_studio/commit/bd00b49149bfd1476e6aff3bf8aa6aa5874209ff))
 
 ## [1.0.1](https://github.com/Zytronium/topology_studio/compare/v1.0.0...v1.0.1) (2026-11-23)
 
