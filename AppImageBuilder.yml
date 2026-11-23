@@ -16,7 +16,7 @@ AppDir:
       - libxrandr2
       - libxcursor1
       - libgl1
-  appinfo:
+  app_info:
     id: com.topology_studio.app
     name: Topology Studio
     icon: icon
